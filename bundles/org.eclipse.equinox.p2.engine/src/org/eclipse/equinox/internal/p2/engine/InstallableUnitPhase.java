@@ -105,6 +105,14 @@ public abstract class InstallableUnitPhase extends Phase {
 		return actions;
 	}
 
+	@Override
+	protected ITouchpointType getTouchpointType(Operand operand) {
+		if (operand instanceof InstallableUnitOperand)
+			return ((InstallableUnitOperand) operand).second().getTouchpointType();
+
+		return null;
+	}
+
 	private final static List<ITouchpointInstruction> getInstructions(IInstallableUnit unit, String key) {
 		Collection<ITouchpointData> data = unit.getTouchpointData();
 		int dataSize = data.size();
@@ -119,4 +127,5 @@ public abstract class InstallableUnitPhase extends Phase {
 		}
 		return matches;
 	}
+
 }

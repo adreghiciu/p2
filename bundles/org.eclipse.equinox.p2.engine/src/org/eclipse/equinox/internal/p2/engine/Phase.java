@@ -15,8 +15,9 @@ import org.eclipse.core.runtime.*;
 import org.eclipse.equinox.internal.p2.core.helpers.LogHelper;
 import org.eclipse.equinox.p2.engine.IProfile;
 import org.eclipse.equinox.p2.engine.ProvisioningContext;
-import org.eclipse.equinox.p2.engine.spi.ProvisioningAction;
-import org.eclipse.equinox.p2.engine.spi.Touchpoint;
+import org.eclipse.equinox.p2.engine.spi.*;
+import org.eclipse.equinox.p2.metadata.ITouchpointType;
+import org.eclipse.equinox.p2.metadata.MetadataFactory;
 import org.eclipse.osgi.util.NLS;
 
 public abstract class Phase {
@@ -121,6 +122,11 @@ public abstract class Phase {
 				return;
 			}
 
+			ITouchpointType touchpointType = getTouchpointType(operand);
+			if (touchpointType != null) {
+				operandParameters.put(IActionExecutor.PARM_ACTION_EXECUTOR, new ActionExecutor(profile, session, operand, subMonitor, touchpointType));
+			}
+
 			Touchpoint operandTouchpoint = (Touchpoint) operandParameters.get(PARM_TOUCHPOINT);
 			if (operandTouchpoint != null) {
 				mergeStatus(status, initializeTouchpointParameters(profile, operand, operandTouchpoint, subMonitor));
@@ -134,38 +140,7 @@ public abstract class Phase {
 			if (actions != null) {
 				for (int j = 0; j < actions.size(); j++) {
 					ProvisioningAction action = actions.get(j);
-					Map<String, Object> parameters = operandParameters;
-					Touchpoint touchpoint = action.getTouchpoint();
-					if (touchpoint != null) {
-						mergeStatus(status, initializeTouchpointParameters(profile, operand, touchpoint, subMonitor));
-						if (status.matches(IStatus.ERROR | IStatus.CANCEL))
-							return;
-
-						parameters = touchpointToTouchpointOperandParameters.get(touchpoint);
-					}
-					IStatus actionStatus = null;
-					try {
-						session.recordActionExecute(action, parameters);
-						actionStatus = action.execute(parameters);
-					} catch (RuntimeException e) {
-						if (!forced)
-							throw e;
-						// "action.execute" calls user code and might throw an unchecked exception
-						// we catch the error here to gather information on where the problem occurred.
-						actionStatus = new Status(IStatus.ERROR, EngineActivator.ID, NLS.bind(Messages.forced_action_execute_error, action.getClass().getName()), e);
-					} catch (LinkageError e) {
-						if (!forced)
-							throw e;
-						// Catch linkage errors as these are generally recoverable but let other Errors propagate (see bug 222001)
-						actionStatus = new Status(IStatus.ERROR, EngineActivator.ID, NLS.bind(Messages.forced_action_execute_error, action.getClass().getName()), e);
-					}
-					if (forced && actionStatus != null && actionStatus.matches(IStatus.ERROR)) {
-						MultiStatus result = new MultiStatus(EngineActivator.ID, IStatus.ERROR, getProblemMessage(), null);
-						result.add(new Status(IStatus.ERROR, EngineActivator.ID, session.getContextString(this, operand, action), null));
-						LogHelper.log(result);
-						actionStatus = Status.OK_STATUS;
-					}
-					mergeStatus(status, actionStatus);
+					executeAction(status, action, profile, session, operand, subMonitor);
 					if (status.matches(IStatus.ERROR | IStatus.CANCEL))
 						return;
 				}
@@ -178,6 +153,41 @@ public abstract class Phase {
 			session.recordOperandEnd(operand);
 			subMonitor.worked(1);
 		}
+	}
+
+	void executeAction(MultiStatus status, ProvisioningAction action, IProfile profile, EngineSession session, Operand operand, IProgressMonitor monitor) throws LinkageError {
+		Map<String, Object> parameters = operandParameters;
+		Touchpoint touchpoint = action.getTouchpoint();
+		if (touchpoint != null) {
+			mergeStatus(status, initializeTouchpointParameters(profile, operand, touchpoint, monitor));
+			if (status.matches(IStatus.ERROR | IStatus.CANCEL))
+				return;
+
+			parameters = touchpointToTouchpointOperandParameters.get(touchpoint);
+		}
+		IStatus actionStatus = null;
+		try {
+			session.recordActionExecute(action, parameters);
+			actionStatus = action.execute(parameters);
+		} catch (RuntimeException e) {
+			if (!forced)
+				throw e;
+			// "action.execute" calls user code and might throw an unchecked exception
+			// we catch the error here to gather information on where the problem occurred.
+			actionStatus = new Status(IStatus.ERROR, EngineActivator.ID, NLS.bind(Messages.forced_action_execute_error, action.getClass().getName()), e);
+		} catch (LinkageError e) {
+			if (!forced)
+				throw e;
+			// Catch linkage errors as these are generally recoverable but let other Errors propagate (see bug 222001)
+			actionStatus = new Status(IStatus.ERROR, EngineActivator.ID, NLS.bind(Messages.forced_action_execute_error, action.getClass().getName()), e);
+		}
+		if (forced && actionStatus != null && actionStatus.matches(IStatus.ERROR)) {
+			MultiStatus result = new MultiStatus(EngineActivator.ID, IStatus.ERROR, getProblemMessage(), null);
+			result.add(new Status(IStatus.ERROR, EngineActivator.ID, session.getContextString(this, operand, action), null));
+			LogHelper.log(result);
+			actionStatus = Status.OK_STATUS;
+		}
+		mergeStatus(status, actionStatus);
 	}
 
 	private IStatus initializeTouchpointParameters(IProfile profile, Operand operand, Touchpoint touchpoint, IProgressMonitor monitor) {
@@ -313,6 +323,10 @@ public abstract class Phase {
 		return Status.OK_STATUS;
 	}
 
+	protected ITouchpointType getTouchpointType(Operand operand) {
+		return null;
+	}
+
 	protected abstract List<ProvisioningAction> getActions(Operand operand);
 
 	/**
@@ -322,4 +336,60 @@ public abstract class Phase {
 	protected String getProblemMessage() {
 		return NLS.bind(Messages.phase_error, getClass().getName());
 	}
+
+	private class ActionExecutor implements IActionExecutor {
+
+		private final ITouchpointType touchpointType;
+		private final Operand operand;
+		private final IProgressMonitor monitor;
+		private final IProfile profile;
+		private final EngineSession session;
+
+		ActionExecutor(IProfile profile, EngineSession session, Operand operand, IProgressMonitor monitor, ITouchpointType touchpointType) {
+			this.profile = profile;
+			this.session = session;
+			this.operand = operand;
+			this.monitor = monitor;
+			this.touchpointType = touchpointType;
+		}
+
+		public Executable action(final String action) {
+			return new IActionExecutor.Executable() {
+
+				private final Map<String, String> actionParams = new HashMap<String, String>();
+
+				public IStatus execute() {
+					StringBuilder instruction = new StringBuilder();
+					for (Map.Entry<String, String> entry : actionParams.entrySet()) {
+						if (instruction.length() != 0) {
+							instruction.append(","); //$NON-NLS-1$
+						}
+						instruction.append(entry.getKey()).append(":").append(entry.getValue()); //$NON-NLS-1$
+					}
+
+					instruction.insert(0, "(").insert(0, action); //$NON-NLS-1$
+					instruction.append(")"); //$NON-NLS-1$
+
+					final InstructionParser instructionParser = new InstructionParser(getActionManager());
+					final List<ProvisioningAction> actions = instructionParser.parseActions(MetadataFactory.createTouchpointInstruction(instruction.toString(), null), touchpointType);
+					if (actions != null && actions.size() == 1) {
+						final ProvisioningAction provisionAction = actions.get(0);
+
+						final MultiStatus status = new MultiStatus(EngineActivator.ID, IStatus.OK, null, null);
+						executeAction(status, provisionAction, profile, session, operand, monitor);
+						return status;
+					}
+
+					return Status.OK_STATUS;
+				}
+
+				public Executable withParam(String name, String value) {
+					actionParams.put(name, value);
+					return this;
+				}
+
+			};
+		}
+	}
+
 }
