@@ -13,8 +13,7 @@ package org.eclipse.equinox.internal.p2.artifact.repository.simple;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.util.Dictionary;
-import java.util.Hashtable;
+import java.util.*;
 import org.eclipse.core.runtime.URIUtil;
 import org.osgi.framework.*;
 
@@ -52,10 +51,24 @@ public class Mapper {
 	}
 
 	public URI map(URI repositoryLocation, String classifier, String id, String version, String format) {
+		Map<String, String> properties = null;
+		if (format != null) {
+			properties = new HashMap<String, String>(1);
+			properties.put(FORMAT, format);
+		}
+		return map(repositoryLocation, classifier, id, version, properties);
+	}
+
+	public URI map(URI repositoryLocation, String classifier, String id, String version, Map<String, String> properties) {
 		String locationString = URIUtil.toUnencodedString(repositoryLocation);
-		Dictionary<String, Object> values = new Hashtable<String, Object>(5);
-		if (repositoryLocation != null)
+		Hashtable<String, String> values = new Hashtable<String, String>(4 + (properties == null ? 0 : properties.size()));
+		if (repositoryLocation != null) {
+			// currently our mapping rules assume the repo URL is not "/" terminated. 
+			// This may be the case for repoURLs in the root of a URL space e.g. root of a jar file or file:/c:/
+			if (locationString.endsWith("/")) //$NON-NLS-1$
+				locationString = locationString.substring(0, locationString.length() - 1);
 			values.put(REPOURL, locationString);
+		}
 
 		if (classifier != null)
 			values.put(CLASSIFIER, classifier);
@@ -66,23 +79,21 @@ public class Mapper {
 		if (version != null)
 			values.put(VERSION, version);
 
-		if (format != null)
-			values.put(FORMAT, format);
+		if (properties != null)
+			values.putAll(properties);
 
 		for (int i = 0; i < filters.length; i++) {
 			if (filters[i].match(values))
-				return doReplacement(outputStrings[i], locationString, classifier, id, version, format);
+				return doReplacement(outputStrings[i], values);
 		}
 		return null;
 	}
 
-	private URI doReplacement(String pattern, String repoLocation, String classifier, String id, String version, String format) {
+	private URI doReplacement(String pattern, Map<String, String> properties) {
 		try {
-			// currently our mapping rules assume the repo URL is not "/" terminated. 
-			// This may be the case for repoURLs in the root of a URL space e.g. root of a jar file or file:/c:/
-			if (repoLocation.endsWith("/")) //$NON-NLS-1$
-				repoLocation = repoLocation.substring(0, repoLocation.length() - 1);
-
+			// make a case insensitive map
+			final Map<String, String> localProps = new TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER);
+			localProps.putAll(properties);
 			StringBuffer output = new StringBuffer(pattern);
 			int index = 0;
 			while (index < output.length()) {
@@ -95,18 +106,7 @@ public class Mapper {
 					return URIUtil.fromString(pattern);
 
 				String varName = output.substring(beginning + 2, end);
-				String varValue = null;
-				if (varName.equalsIgnoreCase(CLASSIFIER)) {
-					varValue = classifier;
-				} else if (varName.equalsIgnoreCase(ID)) {
-					varValue = id;
-				} else if (varName.equalsIgnoreCase(VERSION)) {
-					varValue = version;
-				} else if (varName.equalsIgnoreCase(REPOURL)) {
-					varValue = repoLocation;
-				} else if (varName.equalsIgnoreCase(FORMAT)) {
-					varValue = format;
-				}
+				String varValue = localProps.get(varName);
 				if (varValue == null)
 					varValue = ""; //$NON-NLS-1$
 
