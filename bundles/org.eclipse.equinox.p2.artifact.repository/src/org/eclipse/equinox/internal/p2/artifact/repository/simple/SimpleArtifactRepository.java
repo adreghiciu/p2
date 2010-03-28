@@ -443,7 +443,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 		if (descriptor.getProcessingSteps().length == 0) {
 			descriptor.setProperty(ARTIFACT_UUID, null);
 			IArtifactKey key = descriptor.getArtifactKey();
-			URI result = mapper.map(getLocation(), key.getClassifier(), key.getId(), key.getVersion().toString(), descriptor.getProperty(IArtifactDescriptor.FORMAT));
+			URI result = mapper.map(getLocation(), key.getClassifier(), key.getId(), key.getVersion().toString(), descriptor.getProperties());
 			if (result != null) {
 				if (isFolderBased(descriptor) && URIUtil.lastSegment(result).endsWith(JAR_EXTENSION)) {
 					return URIUtil.removeFileExtension(result);
@@ -685,7 +685,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 	 */
 	private URI getLocationForPackedButFlatArtifacts(IArtifactDescriptor descriptor) {
 		IArtifactKey key = descriptor.getArtifactKey();
-		return mapper.map(getLocation(), key.getClassifier(), key.getId(), key.getVersion().toString(), descriptor.getProperty(IArtifactDescriptor.FORMAT));
+		return mapper.map(getLocation(), key.getClassifier(), key.getId(), key.getVersion().toString(), descriptor.getProperties());
 	}
 
 	public synchronized URI getLocation(IArtifactDescriptor descriptor) {
@@ -714,7 +714,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 			// if the descriptor is complete then use the mapping rules...
 			if (descriptor.getProcessingSteps().length == 0) {
 				IArtifactKey key = descriptor.getArtifactKey();
-				URI result = mapper.map(getLocation(), key.getClassifier(), key.getId(), key.getVersion().toString(), descriptor.getProperty(IArtifactDescriptor.FORMAT));
+				URI result = mapper.map(getLocation(), key.getClassifier(), key.getId(), key.getVersion().toString(), descriptor.getProperties());
 				if (result != null) {
 					if (isFolderBased(descriptor) && URIUtil.lastSegment(result).endsWith(JAR_EXTENSION))
 						return URIUtil.removeFileExtension(result);
@@ -992,11 +992,10 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 		if (PUBLISH_PACK_FILES_AS_SIBLINGS.equals(key)) {
 			synchronized (this) {
 				if (Boolean.TRUE.toString().equals(newValue)) {
-					mappingRules = PACKED_MAPPING_RULES;
+					setRules(PACKED_MAPPING_RULES);
 				} else {
-					mappingRules = DEFAULT_MAPPING_RULES;
+					setRules(DEFAULT_MAPPING_RULES);
 				}
-				initializeMapper();
 			}
 		}
 		save();
@@ -1009,6 +1008,7 @@ public class SimpleArtifactRepository extends AbstractArtifactRepository impleme
 
 	public synchronized void setRules(String[][] rules) {
 		mappingRules = rules;
+		initializeMapper();
 	}
 
 	public String toString() {
