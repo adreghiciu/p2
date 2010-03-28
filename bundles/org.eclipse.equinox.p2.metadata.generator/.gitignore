@@ -3,3 +3,6 @@
 .settings
 bin
 target
+ant_tasks
+bin_ant
+org.eclipse.equinox.simpleconfigurator.jar

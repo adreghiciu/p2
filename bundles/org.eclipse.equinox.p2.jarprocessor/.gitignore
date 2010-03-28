@@ -3,3 +3,5 @@
 .settings
 bin
 target
+bin_ant
+lib
