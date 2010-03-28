@@ -115,7 +115,24 @@ public class ResolvedInstallableUnit implements IInstallableUnit {
 	}
 
 	public ITouchpointType getTouchpointType() {
-		return original.getTouchpointType();
+		// if host iu has a touchpoint type use that one
+		if (original.getTouchpointType() != null && original.getTouchpointType() != ITouchpointType.NONE)
+			return original.getTouchpointType();
+
+		// get the touchpoint type from fragments if there is one and only one fragment that has 
+		// a specified touchpoint
+		ITouchpointType touchpoint = null;
+		for (int i = 0; i < fragments.length; i++) {
+			ITouchpointType fragmentTouchpoint = fragments[i].getTouchpointType();
+			if (fragmentTouchpoint != null && fragmentTouchpoint != ITouchpointType.NONE) {
+				// check that there is only one fragment specifying a touchpoint type
+				if (touchpoint != null)
+					return original.getTouchpointType();
+
+				touchpoint = fragmentTouchpoint;
+			}
+		}
+		return touchpoint;
 	}
 
 	public Version getVersion() {
