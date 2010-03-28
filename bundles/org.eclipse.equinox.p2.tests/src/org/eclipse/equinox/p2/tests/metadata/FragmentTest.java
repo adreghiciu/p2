@@ -78,6 +78,46 @@ public class FragmentTest extends AbstractProvisioningTest {
 		}
 	}
 
+	// test that host touchpoint type is the hosts one in case that there is no fragment 
+	public void testTouchpointType1() {
+		assertEquals("Touchpoint type", createTouchpointType("host"), getTouchpointType(createTouchpointType("host")));
+	}
+
+	// test that host touchpoint type is the hosts one regardless fragments types 
+	public void testTouchpointType2() {
+		assertEquals("Touchpoint type", createTouchpointType("host"), getTouchpointType(createTouchpointType("host"), createTouchpointType("fragment.1")));
+	}
+
+	// test that host touchpoint type is the one from the fragment in case of only one fragment
+	public void testTouchpointType3() {
+		assertEquals("Touchpoint type", createTouchpointType("fragment.1"), getTouchpointType(null, createTouchpointType("fragment.1")));
+	}
+
+	// test that host touchpoint type is the one from the fragment that has the touchpoint type set in case of more fragments 
+	public void testTouchpointType4() {
+		assertEquals("Touchpoint type", createTouchpointType("fragment.1"), getTouchpointType(null, createTouchpointType("fragment.1"), null));
+	}
+
+	private ITouchpointType getTouchpointType(ITouchpointType hostType, ITouchpointType... fragmentsTypes) {
+		IInstallableUnit host = createIU("host", DEFAULT_VERSION, null, NO_REQUIRES, BUNDLE_CAPABILITY, NO_PROPERTIES, hostType, NO_TP_DATA, false);
+		List<IInstallableUnit> ius = new ArrayList<IInstallableUnit>();
+		ius.add(host);
+		int i = 0;
+		for (ITouchpointType fragmentType : fragmentsTypes) {
+			IInstallableUnitFragment fragment = createIUFragment(host, "fragment." + ++i, DEFAULT_VERSION, NO_REQUIRES, fragmentType, NO_TP_DATA);
+			ius.add(fragment);
+		}
+		ProfileChangeRequest req = new ProfileChangeRequest(createProfile(getName()));
+		req.addAll(ius);
+		createTestMetdataRepository(ius.toArray(new IInstallableUnit[ius.size()]));
+		Iterator<IInstallableUnit> iterator = createPlanner().getProvisioningPlan(req, null, null).getAdditions().query(QueryUtil.createIUQuery("host"), null).iterator();
+		return iterator.next().getTouchpointType();
+	}
+
+	private ITouchpointType createTouchpointType(String type) {
+		return MetadataFactory.createTouchpointType(type, Version.createOSGi(1, 0, 0));
+	}
+
 	public void testFragmentCapability() {
 		IInstallableUnit iu = createBundleFragment("iuFragment.test1");
 		assertTrue(QueryUtil.isFragment(iu));
