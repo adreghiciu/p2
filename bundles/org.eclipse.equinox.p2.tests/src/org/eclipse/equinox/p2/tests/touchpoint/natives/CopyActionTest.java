@@ -12,7 +12,9 @@ package org.eclipse.equinox.p2.tests.touchpoint.natives;
 
 import java.io.File;
 import java.util.*;
+import org.eclipse.equinox.internal.p2.engine.Profile;
 import org.eclipse.equinox.internal.p2.touchpoint.natives.NativeTouchpoint;
+import org.eclipse.equinox.internal.p2.touchpoint.natives.Util;
 import org.eclipse.equinox.internal.p2.touchpoint.natives.actions.ActionConstants;
 import org.eclipse.equinox.internal.p2.touchpoint.natives.actions.CopyAction;
 import org.eclipse.equinox.p2.engine.IProfile;
@@ -194,12 +196,29 @@ public class CopyActionTest extends AbstractProvisioningTest {
 		assertFileContent("original content", target, "B");
 	}
 
+	public void testCopyDirectoryForRelativePath() {
+		Map parameters = createParameters("/testData/nativeTouchpoint/aFolder/", "aFolder", false, true);
+		Map safeParameters = Collections.unmodifiableMap(parameters);
+
+		CopyAction action = new CopyAction();
+		action.execute(safeParameters);
+
+		// Verify that the right files was copied
+		File target = new File(new File(Util.getInstallFolder((Profile) parameters.get(ActionConstants.PARM_PROFILE))), (String) parameters.get(ActionConstants.PARM_COPY_TARGET));
+		assertFileContent("copied content A", new File(target, "a.txt"), "A");
+		assertFileContent("copied content B", new File(target, "b.txt"), "B");
+
+		// does nothing so should not alter parameters
+		action.undo(safeParameters);
+		assertFalse("Target should be removed after undo", target.exists());
+	}
+
 	/*
 	 * TODO: testing of the following
 	 * - copy of directory - check that it merges
 	 * - copy of directory with overwrite false/true
 	 */
-	private Map createParameters(String sourceName, String targetName, boolean overwrite) {
+	private Map createParameters(String sourceName, String targetName, boolean overwrite, boolean useRelativeTarget) {
 		Properties profileProperties = new Properties();
 		File installFolder = getTempFolder();
 		profileProperties.setProperty(IProfile.PROP_INSTALL_FOLDER, installFolder.toString());
@@ -225,9 +244,13 @@ public class CopyActionTest extends AbstractProvisioningTest {
 		touchpoint.initializePhase(null, profile, "test", parameters);
 
 		parameters.put(ActionConstants.PARM_COPY_SOURCE, source.getAbsolutePath());
-		parameters.put(ActionConstants.PARM_COPY_TARGET, target.getAbsolutePath());
+		parameters.put(ActionConstants.PARM_COPY_TARGET, useRelativeTarget ? targetName : target.getAbsolutePath());
 		parameters.put(ActionConstants.PARM_COPY_OVERWRITE, Boolean.toString(overwrite));
 		return parameters;
+	}
+
+	private Map createParameters(String sourceName, String targetName, boolean overwrite) {
+		return createParameters(sourceName, targetName, overwrite, false);
 	}
 
 }
