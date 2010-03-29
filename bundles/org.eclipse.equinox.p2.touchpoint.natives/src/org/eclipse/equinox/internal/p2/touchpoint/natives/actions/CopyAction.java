@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.equinox.internal.p2.touchpoint.natives.actions;
 
-import java.io.File;
-
 import java.io.*;
 import java.util.ArrayList;
 import java.util.Map;
@@ -72,6 +70,15 @@ public class CopyAction extends ProvisioningAction {
 
 		File sourceFile = new File(source);
 		File targetFile = new File(target);
+		// if we do not have an absolute target the file will just get installed in the startup directory
+		// which is an unwanted behavior. So patch the target by prepending ${installFolder}
+		// see bug #303612
+		if (!targetFile.isAbsolute()) {
+			String installFolder = Util.getInstallFolder(profile);
+			if (installFolder != null) {
+				targetFile = new File(new File(installFolder), target);
+			}
+		}
 		File[] copiedFiles = null;
 		try {
 			copiedFiles = mergeCopy(sourceFile, targetFile, Boolean.valueOf(overwrite).booleanValue(), backupStore);
