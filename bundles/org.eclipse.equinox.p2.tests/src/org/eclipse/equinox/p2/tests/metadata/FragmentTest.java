@@ -13,6 +13,7 @@ package org.eclipse.equinox.p2.tests.metadata;
 import java.util.*;
 import junit.framework.AssertionFailedError;
 import org.eclipse.equinox.internal.provisional.p2.director.ProfileChangeRequest;
+import org.eclipse.equinox.p2.engine.IProvisioningPlan;
 import org.eclipse.equinox.p2.metadata.*;
 import org.eclipse.equinox.p2.query.QueryUtil;
 import org.eclipse.equinox.p2.tests.AbstractProvisioningTest;
@@ -134,6 +135,65 @@ public class FragmentTest extends AbstractProvisioningTest {
 			}
 		}
 		throw new AssertionFailedError("No capability for the iu id");
+	}
+
+	/**
+	 * Test that fragments does not affect the solution when the fragments do not have requirements.
+	 * This mean that having a fragment that has a host requirement that cannot be satisfied it will not determine solver to fail to find a solution.
+	 * This case is valid only in the context that bug #222157 is solved, meaning that host requirements are not supposed to be expressed also 
+	 * as requirements (which was the case described also in #222158) 
+	 * 
+	 * This test does not include the host IU in request or metadata repository.
+	 */
+	public void testFragmentsOptionality1() {
+		testFragmentsOptionality(false);
+	}
+
+	/**
+	 * Test that fragments does not affect the solution when the fragments do not have requirements.
+	 * This mean that having a fragment that has a host requirement that cannot be satisfied it will not determine solver to fail to find a solution.
+	 * This case is valid only in the context that bug #222157 is solved, meaning that host requirements are not supposed to be expressed also 
+	 * as requirements (which was the case described also in #222158) 
+	 * 
+	 * This test does not include the host IU in request but it includes it in metadata repository.
+	 */
+	public void testFragmentsOptionality2() {
+		testFragmentsOptionality(true);
+	}
+
+	private void testFragmentsOptionality(boolean includeHostIUInRepository) {
+		String ID1 = "iu.test1";
+		String ID2 = "iu.test2";
+		String ID3 = "iuFragment.test3";
+		IInstallableUnit iu1 = createEclipseIU(ID1);
+		IInstallableUnit iu2 = createEclipseIU(ID2);
+		IInstallableUnit iu3 = createIUFragment(iu1, ID3, DEFAULT_VERSION);
+
+		ProfileChangeRequest req = new ProfileChangeRequest(createProfile(getName()));
+		req.addAll(Arrays.asList(iu2, iu3));
+
+		if (includeHostIUInRepository) {
+			createTestMetdataRepository(new IInstallableUnit[] {iu1, iu2, iu3});
+		} else {
+			createTestMetdataRepository(new IInstallableUnit[] {iu2, iu3});
+		}
+
+		IProvisioningPlan provisioningPlan = createPlanner().getProvisioningPlan(req, null, null);
+
+		{
+			Iterator<IInstallableUnit> iterator = provisioningPlan.getAdditions().query(QueryUtil.createIUQuery(ID1), null).iterator();
+			assertTrue("IU " + ID1 + " not expected as part of solution", !iterator.hasNext());
+		}
+		{
+			Iterator<IInstallableUnit> iterator = provisioningPlan.getAdditions().query(QueryUtil.createIUQuery(ID2), null).iterator();
+			assertTrue("IU " + ID2 + " expected as part of solution", iterator.hasNext());
+			assertEquals("Number of fragments", 0, iterator.next().getFragments().size());
+		}
+		{
+			Iterator<IInstallableUnit> iterator = provisioningPlan.getAdditions().query(QueryUtil.createIUQuery(ID3), null).iterator();
+			assertTrue("IU " + ID3 + " expected as part of solution", iterator.hasNext());
+			assertEquals("Number of fragments", 0, iterator.next().getFragments().size());
+		}
 	}
 
 	public static void assertContains(Object[] objects, Object searched) {
