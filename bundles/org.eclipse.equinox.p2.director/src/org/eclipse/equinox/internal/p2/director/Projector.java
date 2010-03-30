@@ -378,9 +378,6 @@ public class Projector {
 		if (!isApplicable(req))
 			return;
 		List<IInstallableUnit> matches = getApplicableMatches(req);
-		if (isHostRequirement(iu, req)) {
-			rememberHostMatches((IInstallableUnitFragment) iu, matches);
-		}
 		if (req.getMin() > 0) {
 			if (matches.isEmpty()) {
 				missingRequirement(iu, req);
@@ -438,6 +435,26 @@ public class Projector {
 		} else {
 			//Patches are applicable to the IU
 			expandRequirementsWithPatches(iu, applicablePatches, isRootIU);
+		}
+		determinePotentialHostsForFragment(iu);
+	}
+
+	/**
+	 * Determines all potential hosts for a fragment.
+	 * A potential host is an IU that satisfies requirements specified for fragment.
+	 *  
+	 * @param iu an eventual fragment. It does nothing if IU is not a fragment or is null
+	 */
+	private void determinePotentialHostsForFragment(IInstallableUnit iu) {
+		// determine matching hosts only for fragments
+		if (!(iu instanceof IInstallableUnitFragment))
+			return;
+
+		IInstallableUnitFragment fragment = (IInstallableUnitFragment) iu;
+		// for each host requirement, find matches and remember them 
+		for (IRequirement req : fragment.getHost()) {
+			List<IInstallableUnit> matches = getApplicableMatches(req);
+			rememberHostMatches((IInstallableUnitFragment) iu, matches);
 		}
 	}
 
@@ -499,9 +516,6 @@ public class Projector {
 				if (isApplicable(reqs[i][1])) {
 					IRequirement req = reqs[i][1];
 					List<IInstallableUnit> matches = getApplicableMatches(req);
-					if (isHostRequirement(iu, req)) {
-						rememberHostMatches((IInstallableUnitFragment) iu, matches);
-					}
 					if (req.getMin() > 0) {
 						if (matches.isEmpty()) {
 							missingRequirement(patch, req);
