@@ -189,4 +189,118 @@ public class UnzipActionTest extends AbstractProvisioningTest {
 
 		backup.discard();
 	}
+
+	/**
+	 * Tests that only the files specified by inclusion path are unzipped as well as undo works.
+	 */
+	public void testInclusion() {
+		String a = "a.txt";
+		String b = "foo/b.txt";
+		String c = "foo/bar/car/c.txt";
+
+		// full path
+		testInclusionExclusion("foo/b.txt", null, getTempFolder(), new String[] {b}, new String[] {a, c});
+		// wildcarded path
+		testInclusionExclusion("*/b.txt", null, getTempFolder(), new String[] {b}, new String[] {a, c});
+		// subdir wildcarded path
+		testInclusionExclusion("**/c.txt", null, getTempFolder(), new String[] {c}, new String[] {a, b});
+	}
+
+	/**
+	 * Tests that only the files specified by exclusion path are not unzipped as well as undo works.
+	 */
+	public void testExclusion() {
+		String a = "a.txt";
+		String b = "foo/b.txt";
+		String c = "foo/bar/car/c.txt";
+
+		// full path
+		testInclusionExclusion(null, "foo/b.txt", getTempFolder(), new String[] {a, c}, new String[] {b});
+		// wildcarded path
+		testInclusionExclusion(null, "*/b.txt", getTempFolder(), new String[] {a, c}, new String[] {b});
+		// subdir wildcarded path
+		testInclusionExclusion(null, "**/c.txt", getTempFolder(), new String[] {a, b}, new String[] {c});
+	}
+
+	/**
+	 * Tests that only the files specified by inclusion path and not in exclusion path are  unzipped as well as undo works.
+	 */
+	public void testInclusionAndExclusion() {
+		String a = "a.txt";
+		String b = "foo/b.txt";
+		String c = "foo/bar/car/c.txt";
+
+		testInclusionExclusion("*.txt", "**/c.txt", getTempFolder(), new String[] {a, b}, new String[] {c});
+	}
+
+	public void testInclusionExclusion(String include, String exclude, File installFolder, String[] shoudlExistNames, String[] shoudlNotExistNames) {
+
+		ArrayList<File> shoudlExist = new ArrayList<File>();
+		ArrayList<File> shoudlNotExist = new ArrayList<File>();
+
+		// first check that are no files in install folder
+		for (String fileName : shoudlExistNames) {
+			File file = new File(installFolder, fileName);
+			shoudlExist.add(file);
+			assertFalse("File " + file.getPath() + " should not exist", file.exists());
+		}
+		for (String fileName : shoudlNotExistNames) {
+			File file = new File(installFolder, fileName);
+			shoudlNotExist.add(file);
+			assertFalse("File " + file.getPath() + " should not exist", file.exists());
+		}
+
+		Properties profileProperties = new Properties();
+		profileProperties.setProperty(IProfile.PROP_INSTALL_FOLDER, installFolder.toString());
+		IProfile profile = createProfile("test", profileProperties);
+
+		File zipSource = getTestData("1.0", "/testData/nativeTouchpoint/a.dir.zip");
+		File zipTarget = new File(installFolder, "inclusion.a.dir.zip");
+		copy("2.0", zipSource, zipTarget);
+
+		InstallableUnitDescription iuDesc = new MetadataFactory.InstallableUnitDescription();
+		iuDesc.setId("test");
+		iuDesc.setVersion(DEFAULT_VERSION);
+		IArtifactKey key = PublisherHelper.createBinaryArtifactKey("test", DEFAULT_VERSION);
+		iuDesc.setArtifacts(new IArtifactKey[] {key});
+		iuDesc.setTouchpointType(PublisherHelper.TOUCHPOINT_NATIVE);
+		IInstallableUnit iu = MetadataFactory.createInstallableUnit(iuDesc);
+
+		Map parameters = new HashMap();
+		parameters.put(ActionConstants.PARM_PROFILE, profile);
+		parameters.put("iu", iu);
+		parameters.put(ActionConstants.PARM_PROFILE, profile);
+		NativeTouchpoint touchpoint = new NativeTouchpoint();
+		touchpoint.initializePhase(null, profile, "test", parameters);
+
+		parameters.put(ActionConstants.PARM_SOURCE, zipTarget.getAbsolutePath());
+		parameters.put(ActionConstants.PARM_TARGET, installFolder.getAbsolutePath());
+		if (include != null) {
+			parameters.put(ActionConstants.PARM_INCLUDE, include);
+		}
+		if (exclude != null) {
+			parameters.put(ActionConstants.PARM_EXCLUDE, exclude);
+		}
+		parameters = Collections.unmodifiableMap(parameters);
+
+		UnzipAction action = new UnzipAction();
+		action.execute(parameters);
+		// first check that are no files in install folder
+		for (File file : shoudlExist) {
+			assertTrue("File " + file.getPath() + " should exist", file.exists());
+		}
+		for (File file : shoudlNotExist) {
+			assertFalse("File " + file.getPath() + " should not exist", file.exists());
+		}
+
+		// does nothing so should not alter parameters
+		action.undo(parameters);
+		// check that undo removed all files
+		for (File file : shoudlExist) {
+			assertFalse("File " + file.getPath() + " should not exist", file.exists());
+		}
+		for (File file : shoudlNotExist) {
+			assertFalse("File " + file.getPath() + " should not exist", file.exists());
+		}
+	}
 }
