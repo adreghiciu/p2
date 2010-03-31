@@ -191,6 +191,34 @@ public class UnzipActionTest extends AbstractProvisioningTest {
 	}
 
 	/**
+	 * Test that when a path is used only files from that path down are unzipped to target as well as undo works.
+	 */
+	public void testPath() {
+		String a = "a.txt";
+		String b = "foo/b.txt";
+		String c = "foo/bar/car/c.txt";
+		String b1 = "b.txt";
+		String c1 = "bar/car/c.txt";
+		String c2 = "car/c.txt";
+
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_PATH, "foo");
+			testUnzip(parameters, getTempFolder(), new String[] {b1, c1}, new String[] {a, b, c});
+		}
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_PATH, "foo/");
+			testUnzip(parameters, getTempFolder(), new String[] {b1, c1}, new String[] {a, b, c});
+		}
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_PATH, "**/bar");
+			testUnzip(parameters, getTempFolder(), new String[] {c2}, new String[] {a, b, c, b1});
+		}
+	}
+
+	/**
 	 * Tests that only the files specified by inclusion path are unzipped as well as undo works.
 	 */
 	public void testInclusion() {
@@ -199,11 +227,23 @@ public class UnzipActionTest extends AbstractProvisioningTest {
 		String c = "foo/bar/car/c.txt";
 
 		// full path
-		testInclusionExclusion("foo/b.txt", null, getTempFolder(), new String[] {b}, new String[] {a, c});
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_INCLUDE, "foo/b.txt");
+			testUnzip(parameters, getTempFolder(), new String[] {b}, new String[] {a, c});
+		}
 		// wildcarded path
-		testInclusionExclusion("*/b.txt", null, getTempFolder(), new String[] {b}, new String[] {a, c});
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_INCLUDE, "*/b.txt");
+			testUnzip(parameters, getTempFolder(), new String[] {b}, new String[] {a, c});
+		}
 		// subdir wildcarded path
-		testInclusionExclusion("**/c.txt", null, getTempFolder(), new String[] {c}, new String[] {a, b});
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_INCLUDE, "**/c.txt");
+			testUnzip(parameters, getTempFolder(), new String[] {c}, new String[] {a, b});
+		}
 	}
 
 	/**
@@ -215,11 +255,23 @@ public class UnzipActionTest extends AbstractProvisioningTest {
 		String c = "foo/bar/car/c.txt";
 
 		// full path
-		testInclusionExclusion(null, "foo/b.txt", getTempFolder(), new String[] {a, c}, new String[] {b});
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_EXCLUDE, "foo/b.txt");
+			testUnzip(parameters, getTempFolder(), new String[] {a, c}, new String[] {b});
+		}
 		// wildcarded path
-		testInclusionExclusion(null, "*/b.txt", getTempFolder(), new String[] {a, c}, new String[] {b});
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_EXCLUDE, "*/b.txt");
+			testUnzip(parameters, getTempFolder(), new String[] {a, c}, new String[] {b});
+		}
 		// subdir wildcarded path
-		testInclusionExclusion(null, "**/c.txt", getTempFolder(), new String[] {a, b}, new String[] {c});
+		{
+			Map<String, String> parameters = new HashMap<String, String>();
+			parameters.put(ActionConstants.PARM_EXCLUDE, "**/c.txt");
+			testUnzip(parameters, getTempFolder(), new String[] {a, b}, new String[] {c});
+		}
 	}
 
 	/**
@@ -230,10 +282,13 @@ public class UnzipActionTest extends AbstractProvisioningTest {
 		String b = "foo/b.txt";
 		String c = "foo/bar/car/c.txt";
 
-		testInclusionExclusion("*.txt", "**/c.txt", getTempFolder(), new String[] {a, b}, new String[] {c});
+		Map<String, String> parameters = new HashMap<String, String>();
+		parameters.put(ActionConstants.PARM_INCLUDE, "*.txt");
+		parameters.put(ActionConstants.PARM_EXCLUDE, "**/c.txt");
+		testUnzip(parameters, getTempFolder(), new String[] {a, b}, new String[] {c});
 	}
 
-	public void testInclusionExclusion(String include, String exclude, File installFolder, String[] shoudlExistNames, String[] shoudlNotExistNames) {
+	private void testUnzip(Map<String, String> params, File installFolder, String[] shoudlExistNames, String[] shoudlNotExistNames) {
 
 		ArrayList<File> shoudlExist = new ArrayList<File>();
 		ArrayList<File> shoudlNotExist = new ArrayList<File>();
@@ -255,7 +310,7 @@ public class UnzipActionTest extends AbstractProvisioningTest {
 		IProfile profile = createProfile("test", profileProperties);
 
 		File zipSource = getTestData("1.0", "/testData/nativeTouchpoint/a.dir.zip");
-		File zipTarget = new File(installFolder, "inclusion.a.dir.zip");
+		File zipTarget = new File(installFolder, "a.dir.zip");
 		copy("2.0", zipSource, zipTarget);
 
 		InstallableUnitDescription iuDesc = new MetadataFactory.InstallableUnitDescription();
@@ -275,17 +330,11 @@ public class UnzipActionTest extends AbstractProvisioningTest {
 
 		parameters.put(ActionConstants.PARM_SOURCE, zipTarget.getAbsolutePath());
 		parameters.put(ActionConstants.PARM_TARGET, installFolder.getAbsolutePath());
-		if (include != null) {
-			parameters.put(ActionConstants.PARM_INCLUDE, include);
-		}
-		if (exclude != null) {
-			parameters.put(ActionConstants.PARM_EXCLUDE, exclude);
-		}
+		parameters.putAll(params);
 		parameters = Collections.unmodifiableMap(parameters);
 
 		UnzipAction action = new UnzipAction();
 		action.execute(parameters);
-		// first check that are no files in install folder
 		for (File file : shoudlExist) {
 			assertTrue("File " + file.getPath() + " should exist", file.exists());
 		}
