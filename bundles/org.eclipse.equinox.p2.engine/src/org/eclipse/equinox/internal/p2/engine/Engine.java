@@ -118,4 +118,8 @@ public class Engine implements IEngine {
 	public IProvisioningPlan createPlan(IProfile profile, ProvisioningContext context) {
 		return new ProvisioningPlan(profile, null, context);
 	}
+
+	public IProvisioningAgent getProvisioningAgent() {
+		return agent;
+	}
 }

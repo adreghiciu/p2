@@ -436,23 +436,35 @@ public class SimplePlanner implements IPlanner {
 				return plan;
 			}
 
-			IProfile agentProfile = profileRegistry.getProfile(IProfileRegistry.SELF);
-			if (agentProfile == null)
+			//No installer agent set
+			if (agent.getParent() == null) {
+				return initialPlan;
+			}
+
+			IProfile installerProfile = ((IProfileRegistry) agent.getParent().getService(IProfileRegistry.SERVICE_NAME)).getProfile(agent.getParent().getInstallerProfileId());
+			if (installerProfile == null)
 				return initialPlan;
 
-			if (profile.getProfileId().equals(agentProfile.getProfileId())) {
-				if (profile.getTimestamp() != agentProfile.getTimestamp()) {
-					IProvisioningPlan plan = engine.createPlan(initialRequest.getProfile(), initialContext);
-					plan.setStatus(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, NLS.bind(Messages.Planner_profile_out_of_sync, profile.getProfileId())));
-					return plan;
+			//The target and the installer are in the same agent / profile registry
+			if (agent.equals(agent.getParent())) {
+				//The target and the installer are the same profile (e.g. the eclipse SDK)
+				if (profile.getProfileId().equals(installerProfile.getProfileId())) {
+					if (profile.getTimestamp() != installerProfile.getTimestamp()) {
+						IProvisioningPlan plan = engine.createPlan(initialRequest.getProfile(), initialContext);
+						plan.setStatus(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, NLS.bind(Messages.Planner_profile_out_of_sync, profile.getProfileId())));
+						return plan;
+					}
+					return createInstallerPlanForCohostedCase(profile, initialRequest, initialPlan, unattachedState, expectedState, initialContext, sub);
 				}
-				return createInstallerPlanForCohostedCase(profile, initialRequest, initialPlan, unattachedState, expectedState, initialContext, sub);
+
 			}
 
-			if (satisfyMetaRequirements(profile) && !profile.getProfileId().equals(agentProfile.getProfileId())) {
-				return createInstallerPlanForCohostedCaseFromExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, agentProfile, sub);
+			if (satisfyMetaRequirements(profile) && !profile.getProfileId().equals(installerProfile.getProfileId())) {
+				return createInstallerPlanForCohostedCaseFromExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, installerProfile, sub);
 			}
-			return createInstallerPlanForExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, agentProfile, sub);
+
+			return createInstallerPlanForExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, installerProfile, sub);
+
 		} finally {
 			sub.done();
 		}
@@ -465,14 +477,17 @@ public class SimplePlanner implements IPlanner {
 
 	//Deal with the case where the agent profile is different than the one being provisioned
 	private IProvisioningPlan createInstallerPlanForExternalInstaller(IProfile targetedProfile, ProfileChangeRequest initialRequest, IProvisioningPlan initialPlan, Collection<IInstallableUnit> expectedState, ProvisioningContext initialContext, IProfile agentProfile, SubMonitor sub) {
-		Collection<IRequirement> metaRequirements = areMetaRequirementsSatisfied(agentProfile, expectedState, initialPlan);
+		IProfileRegistry installerRegistry = (IProfileRegistry) agent.getParent().getService(IProfileRegistry.SERVICE_NAME);
+		IProfile installerProfile = installerRegistry.getProfile(agent.getParent().getInstallerProfileId());
+
+		Collection<IRequirement> metaRequirements = areMetaRequirementsSatisfied(installerProfile, expectedState, initialPlan);
 		if (metaRequirements == null)
 			return initialPlan;
 
 		IInstallableUnit actionsIU = createIUForMetaRequirements(targetedProfile, metaRequirements);
-		IInstallableUnit previousActionsIU = getPreviousIUForMetaRequirements(agentProfile, getActionGatheringIUId(targetedProfile), sub);
+		IInstallableUnit previousActionsIU = getPreviousIUForMetaRequirements(installerProfile, getActionGatheringIUId(targetedProfile), sub);
 
-		ProfileChangeRequest agentRequest = new ProfileChangeRequest(agentProfile);
+		ProfileChangeRequest agentRequest = new ProfileChangeRequest(installerProfile);
 		agentRequest.add(actionsIU);
 		if (previousActionsIU != null)
 			agentRequest.remove(previousActionsIU);

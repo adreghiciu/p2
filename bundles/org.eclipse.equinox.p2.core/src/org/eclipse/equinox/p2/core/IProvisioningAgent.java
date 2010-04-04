@@ -87,4 +87,11 @@ public interface IProvisioningAgent {
 	 */
 	public void unregisterService(String serviceName, Object service);
 
+	public void setParent(IProvisioningAgent installerAgent);
+
+	public void setInstallerProfileId(String profileId);
+
+	public IProvisioningAgent getParent();
+
+	public String getInstallerProfileId();
 }
