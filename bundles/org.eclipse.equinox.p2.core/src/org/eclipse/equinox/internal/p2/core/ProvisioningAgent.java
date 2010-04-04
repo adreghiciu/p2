@@ -31,11 +31,16 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 	private ServiceRegistration reg;
 	private final Map<ServiceReference, ServiceTracker> trackers = Collections.synchronizedMap(new HashMap<ServiceReference, ServiceTracker>());
 
+	private IProvisioningAgent installerAgent;
+	private String installerProfileId;
+
 	/**
 	 * Instantiates a provisioning agent.
 	 */
 	public ProvisioningAgent() {
 		super();
+		installerAgent = this;
+		installerProfileId = "_SELF_";
 	}
 
 	/* (non-Javadoc)
@@ -178,5 +183,39 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 			if (toRemove != null)
 				toRemove.close();
 		}
+	}
+
+	public void setParent(IProvisioningAgent installerAgent) {
+		this.installerAgent = installerAgent;
+	}
+
+	public void setInstallerProfileId(String profileId) {
+		this.installerProfileId = profileId;
+	}
+
+	public IProvisioningAgent getParent() {
+		return installerAgent;
+	}
+
+	public String getInstallerProfileId() {
+		return installerProfileId;
+	}
+
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (!(obj instanceof IProvisioningAgent))
+			return false;
+		IAgentLocation thisLocation = (IAgentLocation) getService(IAgentLocation.SERVICE_NAME);
+		IAgentLocation otherLocation = (IAgentLocation) ((IProvisioningAgent) obj).getService(IAgentLocation.SERVICE_NAME);
+		if (thisLocation == null || otherLocation == null || (thisLocation == null && otherLocation == null))
+			return false;
+		return thisLocation.getRootLocation().equals(otherLocation.getRootLocation());
+	}
+
+	@Override
+	public int hashCode() {
+		// TODO Auto-generated method stub
+		return super.hashCode();
 	}
 }
