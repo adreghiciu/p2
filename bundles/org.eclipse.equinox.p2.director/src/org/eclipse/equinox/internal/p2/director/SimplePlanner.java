@@ -20,6 +20,7 @@ import org.eclipse.equinox.internal.p2.core.helpers.Tracing;
 import org.eclipse.equinox.internal.p2.metadata.query.UpdateQuery;
 import org.eclipse.equinox.internal.p2.rollback.FormerState;
 import org.eclipse.equinox.internal.provisional.p2.director.*;
+import org.eclipse.equinox.p2.core.IAgentLocation;
 import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.engine.*;
 import org.eclipse.equinox.p2.engine.query.IUProfilePropertyQuery;
@@ -342,8 +343,6 @@ public class SimplePlanner implements IPlanner {
 
 	public IProvisioningPlan getProvisioningPlan(IProfileChangeRequest request, ProvisioningContext context, IProgressMonitor monitor) {
 		ProfileChangeRequest pcr = (ProfileChangeRequest) request;
-		if (pcr.getAbsolute())
-			return generateAbsoluteProvisioningPlan(pcr, context, monitor);
 		SubMonitor sub = SubMonitor.convert(monitor, ExpandWork);
 		sub.setTaskName(Messages.Director_Task_Resolving_Dependencies);
 		try {
@@ -370,36 +369,36 @@ public class SimplePlanner implements IPlanner {
 		}
 	}
 
-	private IProvisioningPlan generateAbsoluteProvisioningPlan(ProfileChangeRequest profileChangeRequest, ProvisioningContext context, IProgressMonitor monitor) {
-		Set<IInstallableUnit> toState = profileChangeRequest.getProfile().query(QueryUtil.createIUAnyQuery(), null).toSet();
-		HashSet<IInstallableUnit> fromState = new HashSet<IInstallableUnit>(toState);
-		toState.removeAll(profileChangeRequest.getRemovals());
-		toState.addAll(profileChangeRequest.getAdditions());
-
-		IProvisioningPlan plan = engine.createPlan(profileChangeRequest.getProfile(), context);
-		planIUOperations(plan, fromState, toState);
-		planPropertyOperations(plan, profileChangeRequest);
-
-		if (DEBUG) {
-			Object[] operands = new Object[0];
-			try {
-				Method getOperands = plan.getClass().getMethod("getOperands", new Class[0]); //$NON-NLS-1$
-				operands = (Object[]) getOperands.invoke(plan, new Object[0]);
-			} catch (Throwable e) {
-				// ignore
-			}
-			for (int i = 0; i < operands.length; i++) {
-				Tracing.debug(operands[i].toString());
-			}
-		}
-		Map<IInstallableUnit, RequestStatus>[] changes = computeActualChangeRequest(toState, profileChangeRequest);
-		Map<IInstallableUnit, RequestStatus> requestChanges = (changes == null) ? null : changes[0];
-		Map<IInstallableUnit, RequestStatus> requestSideEffects = (changes == null) ? null : changes[1];
-		QueryableArray plannedState = new QueryableArray(toState.toArray(new IInstallableUnit[toState.size()]));
-		PlannerStatus plannerStatus = new PlannerStatus(Status.OK_STATUS, null, requestChanges, requestSideEffects, plannedState);
-		plan.setStatus(plannerStatus);
-		return plan;
-	}
+	//	private IProvisioningPlan generateAbsoluteProvisioningPlan(ProfileChangeRequest profileChangeRequest, ProvisioningContext context, IProgressMonitor monitor) {
+	//		Set<IInstallableUnit> toState = profileChangeRequest.getProfile().query(QueryUtil.createIUAnyQuery(), null).toSet();
+	//		HashSet<IInstallableUnit> fromState = new HashSet<IInstallableUnit>(toState);
+	//		toState.removeAll(profileChangeRequest.getRemovals());
+	//		toState.addAll(profileChangeRequest.getAdditions());
+	//
+	//		IProvisioningPlan plan = engine.createPlan(profileChangeRequest.getProfile(), context);
+	//		planIUOperations(plan, fromState, toState);
+	//		planPropertyOperations(plan, profileChangeRequest);
+	//
+	//		if (DEBUG) {
+	//			Object[] operands = new Object[0];
+	//			try {
+	//				Method getOperands = plan.getClass().getMethod("getOperands", new Class[0]); //$NON-NLS-1$
+	//				operands = (Object[]) getOperands.invoke(plan, new Object[0]);
+	//			} catch (Throwable e) {
+	//				// ignore
+	//			}
+	//			for (int i = 0; i < operands.length; i++) {
+	//				Tracing.debug(operands[i].toString());
+	//			}
+	//		}
+	//		Map<IInstallableUnit, RequestStatus>[] changes = computeActualChangeRequest(toState, profileChangeRequest);
+	//		Map<IInstallableUnit, RequestStatus> requestChanges = (changes == null) ? null : changes[0];
+	//		Map<IInstallableUnit, RequestStatus> requestSideEffects = (changes == null) ? null : changes[1];
+	//		QueryableArray plannedState = new QueryableArray(toState.toArray(new IInstallableUnit[toState.size()]));
+	//		PlannerStatus plannerStatus = new PlannerStatus(Status.OK_STATUS, null, requestChanges, requestSideEffects, plannedState);
+	//		plan.setStatus(plannerStatus);
+	//		return plan;
+	//	}
 
 	//Verify that all the meta requirements necessary to perform the uninstallation (if necessary) and all t
 	private Collection<IRequirement> areMetaRequirementsSatisfied(IProfile oldProfile, Collection<IInstallableUnit> newProfile, IProvisioningPlan initialPlan) {
@@ -436,26 +435,50 @@ public class SimplePlanner implements IPlanner {
 				return plan;
 			}
 
-			IProfile agentProfile = profileRegistry.getProfile(IProfileRegistry.SELF);
-			if (agentProfile == null)
+			//No installer agent set
+			if (agent.getService(IProvisioningAgent.INSTALLER_AGENT) == null) {
+				return initialPlan;
+			}
+
+			IProfile installerProfile = ((IProfileRegistry) ((IProvisioningAgent) agent.getService(IProvisioningAgent.INSTALLER_AGENT)).getService(IProfileRegistry.SERVICE_NAME)).getProfile((String) agent.getService(IProvisioningAgent.INSTALLER_PROFILEID));
+			if (installerProfile == null)
 				return initialPlan;
 
-			if (profile.getProfileId().equals(agentProfile.getProfileId())) {
-				if (profile.getTimestamp() != agentProfile.getTimestamp()) {
-					IProvisioningPlan plan = engine.createPlan(initialRequest.getProfile(), initialContext);
-					plan.setStatus(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, NLS.bind(Messages.Planner_profile_out_of_sync, profile.getProfileId())));
-					return plan;
+			//The target and the installer are in the same agent / profile registry
+			if (haveSameLocation(agent, (IProvisioningAgent) agent.getService(IProvisioningAgent.INSTALLER_AGENT))) {
+				//The target and the installer are the same profile (e.g. the eclipse SDK)
+				if (profile.getProfileId().equals(installerProfile.getProfileId())) {
+					if (profile.getTimestamp() != installerProfile.getTimestamp()) {
+						IProvisioningPlan plan = engine.createPlan(initialRequest.getProfile(), initialContext);
+						plan.setStatus(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, NLS.bind(Messages.Planner_profile_out_of_sync, profile.getProfileId())));
+						return plan;
+					}
+					return createInstallerPlanForCohostedCase(profile, initialRequest, initialPlan, unattachedState, expectedState, initialContext, sub);
 				}
-				return createInstallerPlanForCohostedCase(profile, initialRequest, initialPlan, unattachedState, expectedState, initialContext, sub);
+
 			}
 
-			if (satisfyMetaRequirements(profile) && !profile.getProfileId().equals(agentProfile.getProfileId())) {
-				return createInstallerPlanForCohostedCaseFromExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, agentProfile, sub);
+			if (satisfyMetaRequirements(profile) && !profile.getProfileId().equals(installerProfile.getProfileId())) {
+				return createInstallerPlanForCohostedCaseFromExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, installerProfile, sub);
 			}
-			return createInstallerPlanForExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, agentProfile, sub);
+
+			return createInstallerPlanForExternalInstaller(profile, initialRequest, initialPlan, expectedState, initialContext, installerProfile, sub);
+
 		} finally {
 			sub.done();
 		}
+	}
+
+	private boolean haveSameLocation(IProvisioningAgent agent1, IProvisioningAgent agent2) {
+		if (agent1 == null || agent2 == null)
+			return false;
+		if (agent1 == agent2)
+			return true;
+		IAgentLocation thisLocation = (IAgentLocation) agent1.getService(IAgentLocation.SERVICE_NAME);
+		IAgentLocation otherLocation = (IAgentLocation) agent2.getService(IAgentLocation.SERVICE_NAME);
+		if (thisLocation == null || otherLocation == null || (thisLocation == null && otherLocation == null))
+			return false;
+		return thisLocation.getRootLocation().equals(otherLocation.getRootLocation());
 	}
 
 	private IProvisioningPlan createInstallerPlanForCohostedCaseFromExternalInstaller(IProfile profile, ProfileChangeRequest initialRequest, IProvisioningPlan initialPlan, Collection<IInstallableUnit> newState, ProvisioningContext initialContext, IProfile agentProfile, SubMonitor sub) {
@@ -465,14 +488,17 @@ public class SimplePlanner implements IPlanner {
 
 	//Deal with the case where the agent profile is different than the one being provisioned
 	private IProvisioningPlan createInstallerPlanForExternalInstaller(IProfile targetedProfile, ProfileChangeRequest initialRequest, IProvisioningPlan initialPlan, Collection<IInstallableUnit> expectedState, ProvisioningContext initialContext, IProfile agentProfile, SubMonitor sub) {
-		Collection<IRequirement> metaRequirements = areMetaRequirementsSatisfied(agentProfile, expectedState, initialPlan);
+		IProfileRegistry installerRegistry = (IProfileRegistry) ((IProvisioningAgent) agent.getService(IProvisioningAgent.INSTALLER_AGENT)).getService(IProfileRegistry.SERVICE_NAME);
+		IProfile installerProfile = installerRegistry.getProfile((String) agent.getService(IProvisioningAgent.INSTALLER_PROFILEID));
+
+		Collection<IRequirement> metaRequirements = areMetaRequirementsSatisfied(installerProfile, expectedState, initialPlan);
 		if (metaRequirements == null)
 			return initialPlan;
 
 		IInstallableUnit actionsIU = createIUForMetaRequirements(targetedProfile, metaRequirements);
-		IInstallableUnit previousActionsIU = getPreviousIUForMetaRequirements(agentProfile, getActionGatheringIUId(targetedProfile), sub);
+		IInstallableUnit previousActionsIU = getPreviousIUForMetaRequirements(installerProfile, getActionGatheringIUId(targetedProfile), sub);
 
-		ProfileChangeRequest agentRequest = new ProfileChangeRequest(agentProfile);
+		ProfileChangeRequest agentRequest = new ProfileChangeRequest(installerProfile);
 		agentRequest.add(actionsIU);
 		if (previousActionsIU != null)
 			agentRequest.remove(previousActionsIU);
@@ -608,7 +634,7 @@ public class SimplePlanner implements IPlanner {
 		description.setId(id);
 		Version version = Version.createOSGi(1, 0, 0, Long.toString(profile.getTimestamp()));
 		description.setVersion(version);
-		description.addRequiredCapabilities(metaRequirements);
+		description.addRequirements(metaRequirements);
 
 		ArrayList<IProvidedCapability> providedCapabilities = new ArrayList<IProvidedCapability>();
 		IProvidedCapability providedCapability = MetadataFactory.createProvidedCapability(IInstallableUnit.NAMESPACE_IU_ID, id, version);
@@ -624,7 +650,7 @@ public class SimplePlanner implements IPlanner {
 		String time = Long.toString(System.currentTimeMillis());
 		iud.setId(time);
 		iud.setVersion(Version.createOSGi(0, 0, 0, time));
-		iud.setRequiredCapabilities(allRequirements.toArray(new IRequirement[allRequirements.size()]));
+		iud.setRequirements(allRequirements.toArray(new IRequirement[allRequirements.size()]));
 		return MetadataFactory.createInstallableUnit(iud);
 	}
 
