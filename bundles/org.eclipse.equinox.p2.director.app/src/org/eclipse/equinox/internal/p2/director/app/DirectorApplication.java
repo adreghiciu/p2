@@ -130,6 +130,7 @@ public class DirectorApplication implements IApplication {
 	private static final CommandLineOption OPTION_P2_WS = new CommandLineOption(new String[] {"-p2.ws"}, null, Messages.Help_The_WS_when_profile_is_created); //$NON-NLS-1$
 	private static final CommandLineOption OPTION_P2_ARCH = new CommandLineOption(new String[] {"-p2.arch"}, null, Messages.Help_The_ARCH_when_profile_is_created); //$NON-NLS-1$
 	private static final CommandLineOption OPTION_P2_NL = new CommandLineOption(new String[] {"-p2.nl"}, null, Messages.Help_The_NL_when_profile_is_created); //$NON-NLS-1$
+	private static final CommandLineOption OPTION_PURGEHISTORY = new CommandLineOption(new String[] {"-purgeHistory"}, null, Messages.Help_Purge_the_install_registry); //$NON-NLS-1$
 
 	private static final Integer EXIT_ERROR = new Integer(13);
 	static private final String FLAVOR_DEFAULT = "tooling"; //$NON-NLS-1$
@@ -211,6 +212,7 @@ public class DirectorApplication implements IApplication {
 	private long revertToPreviousState = -1;
 	private boolean verifyOnly = false;
 	private boolean roamingProfile = false;
+	private boolean purgeRegistry = false;
 	private boolean stackTrace = false;
 	private String profileId;
 	private String profileProperties; // a comma-separated list of property pairs "tag=value"
@@ -227,8 +229,6 @@ public class DirectorApplication implements IApplication {
 	private ILog log = null;
 
 	private IProvisioningAgent targetAgent;
-	public IProvisioningAgent installerAgent;
-
 	private boolean noArtifactRepositorySpecified = false;
 
 	private ProfileChangeRequest buildProvisioningRequest(IProfile profile, Collection<IInstallableUnit> installs, Collection<IInstallableUnit> uninstalls) {
@@ -319,13 +319,17 @@ public class DirectorApplication implements IApplication {
 		return values.isEmpty() ? null : toString(values);
 	}
 
-	private IProfile initializeProfile() throws CoreException {
+	private IProfile getProfile() {
 		IProfileRegistry profileRegistry = (IProfileRegistry) targetAgent.getService(IProfileRegistry.SERVICE_NAME);
 		if (profileId == null) {
 			profileId = IProfileRegistry.SELF;
 			noProfileId = true;
 		}
-		IProfile profile = profileRegistry.getProfile(profileId);
+		return profileRegistry.getProfile(profileId);
+	}
+
+	private IProfile initializeProfile() throws CoreException {
+		IProfile profile = getProfile();
 		if (profile == null) {
 			if (destination == null)
 				missingArgument("destination"); //$NON-NLS-1$
@@ -346,7 +350,7 @@ public class DirectorApplication implements IApplication {
 				props.put(IProfile.PROP_ENVIRONMENTS, env);
 			if (profileProperties != null)
 				putProperties(profileProperties, props);
-			profile = profileRegistry.addProfile(profileId, props);
+			profile = ((IProfileRegistry) targetAgent.getService(IProfileRegistry.SERVICE_NAME)).addProfile(profileId, props);
 		}
 		return profile;
 	}
@@ -424,7 +428,7 @@ public class DirectorApplication implements IApplication {
 			p2DataArea = null;
 		}
 		targetAgent = provider.createAgent(p2DataArea);
-		targetAgent.setParent(provider.createAgent(null));
+		targetAgent.registerService(IProvisioningAgent.INSTALLER_AGENT, provider.createAgent(null));
 
 		context.ungetService(agentProviderRef);
 		if (profileId == null) {
@@ -705,6 +709,11 @@ public class DirectorApplication implements IApplication {
 				continue;
 			}
 
+			if (OPTION_PURGEHISTORY.isOption(opt)) {
+				purgeRegistry = true;
+				continue;
+			}
+
 			if (OPTION_P2_OS.isOption(opt)) {
 				os = getRequiredArgument(args, ++i);
 				continue;
@@ -727,7 +736,7 @@ public class DirectorApplication implements IApplication {
 			throw new ProvisionException(NLS.bind(Messages.unknown_option_0, opt));
 		}
 
-		if (!printHelpInfo && !printIUList && rootsToInstall.isEmpty() && rootsToUninstall.isEmpty() && revertToPreviousState == -1) {
+		if (!printHelpInfo && !printIUList && !purgeRegistry && rootsToInstall.isEmpty() && rootsToUninstall.isEmpty() && revertToPreviousState == -1) {
 			printMessage(Messages.Help_Missing_argument);
 			printHelpInfo = true;
 		}
@@ -780,6 +789,8 @@ public class DirectorApplication implements IApplication {
 					performProvisioningActions();
 				if (printIUList)
 					performList();
+				if (purgeRegistry)
+					purgeRegistry();
 				printMessage(NLS.bind(Messages.Operation_complete, new Long(System.currentTimeMillis() - time)));
 			}
 			return IApplication.EXIT_OK;
@@ -795,6 +806,16 @@ public class DirectorApplication implements IApplication {
 				cleanupRepositories();
 				cleanupServices();
 			}
+		}
+	}
+
+	private void purgeRegistry() throws ProvisionException {
+		if (getProfile() == null)
+			return;
+		IProfileRegistry registry = (IProfileRegistry) targetAgent.getService(IProfileRegistry.SERVICE_NAME);
+		long[] allProfiles = registry.listProfileTimestamps(profileId);
+		for (int i = 0; i < allProfiles.length - 1; i++) {
+			registry.removeProfile(profileId, allProfiles[i]);
 		}
 	}
 
@@ -897,7 +918,7 @@ public class DirectorApplication implements IApplication {
 	}
 
 	private void performHelpInfo() {
-		CommandLineOption[] allOptions = new CommandLineOption[] {OPTION_HELP, OPTION_LIST, OPTION_INSTALL_IU, OPTION_UNINSTALL_IU, OPTION_REVERT, OPTION_DESTINATION, OPTION_METADATAREPOS, OPTION_ARTIFACTREPOS, OPTION_REPOSITORIES, OPTION_VERIFY_ONLY, OPTION_PROFILE, OPTION_FLAVOR, OPTION_SHARED, OPTION_BUNDLEPOOL, OPTION_PROFILE_PROPS, OPTION_ROAMING, OPTION_P2_OS, OPTION_P2_WS, OPTION_P2_ARCH, OPTION_P2_NL};
+		CommandLineOption[] allOptions = new CommandLineOption[] {OPTION_HELP, OPTION_LIST, OPTION_INSTALL_IU, OPTION_UNINSTALL_IU, OPTION_REVERT, OPTION_DESTINATION, OPTION_METADATAREPOS, OPTION_ARTIFACTREPOS, OPTION_REPOSITORIES, OPTION_VERIFY_ONLY, OPTION_PROFILE, OPTION_FLAVOR, OPTION_SHARED, OPTION_BUNDLEPOOL, OPTION_PROFILE_PROPS, OPTION_ROAMING, OPTION_P2_OS, OPTION_P2_WS, OPTION_P2_ARCH, OPTION_P2_NL, OPTION_PURGEHISTORY};
 		for (int i = 0; i < allOptions.length; ++i) {
 			allOptions[i].appendHelp(System.out);
 		}
