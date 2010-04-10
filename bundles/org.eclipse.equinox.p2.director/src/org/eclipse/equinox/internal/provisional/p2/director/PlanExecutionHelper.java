@@ -28,7 +28,7 @@ public class PlanExecutionHelper {
 			return result.getStatus();
 
 		if (result.getInstallerPlan() != null) {
-			IStatus installerPlanStatus = ((IEngine) engine.getProvisioningAgent().getParent().getService(IEngine.SERVICE_NAME)).perform(result.getInstallerPlan(), phaseSet, progress);
+			IStatus installerPlanStatus = ((IEngine) result.getInstallerPlan().getProfile().getProvisioningAgent().getService(IEngine.SERVICE_NAME)).perform(result.getInstallerPlan(), phaseSet, progress);
 			if (!installerPlanStatus.isOK())
 				return installerPlanStatus;
 			Configurator configChanger = (Configurator) ServiceHelper.getService(DirectorActivator.context, Configurator.class.getName());
