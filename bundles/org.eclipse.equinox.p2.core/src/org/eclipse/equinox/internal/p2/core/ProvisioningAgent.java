@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2009 IBM Corporation and others.
+ * Copyright (c) 2009, 2010 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -36,6 +36,8 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 	 */
 	public ProvisioningAgent() {
 		super();
+		registerService(IProvisioningAgent.INSTALLER_AGENT, this);
+		registerService(IProvisioningAgent.INSTALLER_PROFILEID, "_SELF_"); //$NON-NLS-1$
 	}
 
 	/* (non-Javadoc)
@@ -76,7 +78,7 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 
 	private synchronized void checkRunning() {
 		if (stopped)
-			throw new RuntimeException("Attempt to access stopped agent: " + this); //$NON-NLS-1$
+			throw new IllegalStateException("Attempt to access stopped agent: " + this); //$NON-NLS-1$
 	}
 
 	public void registerService(String serviceName, Object service) {
@@ -122,7 +124,8 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 		//give services a chance to do their own shutdown
 		for (Object service : agentServices.values()) {
 			if (service instanceof IAgentService)
-				((IAgentService) service).stop();
+				if (service != this)
+					((IAgentService) service).stop();
 		}
 		synchronized (this) {
 			stopped = true;
