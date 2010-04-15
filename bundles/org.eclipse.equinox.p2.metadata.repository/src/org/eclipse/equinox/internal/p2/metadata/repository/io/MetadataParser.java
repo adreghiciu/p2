@@ -309,9 +309,9 @@ public abstract class MetadataParser extends XMLParser implements XMLConstants {
 				IProvidedCapability[] providedCapabilities = (providedCapabilitiesHandler == null ? new IProvidedCapability[0] : providedCapabilitiesHandler.getProvidedCapabilities());
 				currentUnit.setCapabilities(providedCapabilities);
 				IRequirement[] requiredCapabilities = (requiredCapabilitiesHandler == null ? new IRequirement[0] : requiredCapabilitiesHandler.getRequiredCapabilities());
-				currentUnit.setRequiredCapabilities(requiredCapabilities);
+				currentUnit.setRequirements(requiredCapabilities);
 				IRequirement[] metaRequiredCapabilities = (metaRequiredCapabilitiesHandler == null ? new IRequirement[0] : metaRequiredCapabilitiesHandler.getMetaRequiredCapabilities());
-				currentUnit.setMetaRequiredCapabilities(metaRequiredCapabilities);
+				currentUnit.setMetaRequirements(metaRequiredCapabilities);
 				if (filterHandler != null) {
 					currentUnit.setFilter(filterHandler.getText());
 				}
@@ -580,6 +580,7 @@ public abstract class MetadataParser extends XMLParser implements XMLConstants {
 		private boolean greedy;
 
 		private TextHandler filterHandler = null;
+		private TextHandler descriptionHandler = null;
 
 		public RequirementHandler(AbstractHandler parentHandler, Attributes attributes, List<IRequirement> capabilities) {
 			super(parentHandler, REQUIREMENT_ELEMENT);
@@ -608,43 +609,47 @@ public abstract class MetadataParser extends XMLParser implements XMLConstants {
 		public void startElement(String name, Attributes attributes) {
 			if (name.equals(CAPABILITY_FILTER_ELEMENT)) {
 				filterHandler = new TextHandler(this, CAPABILITY_FILTER_ELEMENT, attributes);
+			} else if (name.equals(REQUIREMENT_DESCRIPTION_ELEMENT)) {
+				descriptionHandler = new TextHandler(this, REQUIREMENT_DESCRIPTION_ELEMENT, attributes);
 			} else {
 				invalidElement(name, attributes);
 			}
 		}
 
 		protected void finished() {
-			if (isValidXML()) {
-				IMatchExpression<IInstallableUnit> filter = null;
-				if (filterHandler != null)
-					try {
-						filter = InstallableUnit.parseFilter(filterHandler.getText());
-					} catch (ExpressionParseException e) {
-						if (removeWhiteSpace(filterHandler.getText()).equals("(&(|)(|)(|))")) {//$NON-NLS-1$
-							// We could log this I guess
-						} else {
-							throw e;
-						}
+			if (!isValidXML())
+				return;
+			IMatchExpression<IInstallableUnit> filter = null;
+			if (filterHandler != null) {
+				try {
+					filter = InstallableUnit.parseFilter(filterHandler.getText());
+				} catch (ExpressionParseException e) {
+					if (removeWhiteSpace(filterHandler.getText()).equals("(&(|)(|)(|))")) {//$NON-NLS-1$
+						// We could log this I guess
+					} else {
+						throw e;
 					}
-				IRequirement requirement;
-				if (match != null) {
-					IExpressionFactory factory = ExpressionUtil.getFactory();
-					IExpression expr = ExpressionUtil.parse(match);
-					Object[] params;
-					if (matchParams == null)
-						params = new Object[0];
-					else {
-						IExpression[] arrayExpr = ExpressionUtil.getOperands(ExpressionUtil.parse(matchParams));
-						params = new Object[arrayExpr.length];
-						for (int idx = 0; idx < arrayExpr.length; ++idx)
-							params[idx] = arrayExpr[idx].evaluate(null);
-					}
-					IMatchExpression<IInstallableUnit> matchExpr = factory.matchExpression(expr, params);
-					requirement = MetadataFactory.createRequirement(matchExpr, filter, min, max, greedy);
-				} else
-					requirement = MetadataFactory.createRequirement(namespace, name, range, filter, min, max, greedy);
-				capabilities.add(requirement);
+				}
 			}
+			String description = descriptionHandler == null ? null : descriptionHandler.getText();
+			IRequirement requirement;
+			if (match != null) {
+				IExpressionFactory factory = ExpressionUtil.getFactory();
+				IExpression expr = ExpressionUtil.parse(match);
+				Object[] params;
+				if (matchParams == null)
+					params = new Object[0];
+				else {
+					IExpression[] arrayExpr = ExpressionUtil.getOperands(ExpressionUtil.parse(matchParams));
+					params = new Object[arrayExpr.length];
+					for (int idx = 0; idx < arrayExpr.length; ++idx)
+						params[idx] = arrayExpr[idx].evaluate(null);
+				}
+				IMatchExpression<IInstallableUnit> matchExpr = factory.matchExpression(expr, params);
+				requirement = MetadataFactory.createRequirement(matchExpr, filter, min, max, greedy, description);
+			} else
+				requirement = MetadataFactory.createRequirement(namespace, name, range, filter, min, max, greedy, description);
+			capabilities.add(requirement);
 		}
 
 		private String removeWhiteSpace(String s) {
@@ -814,7 +819,8 @@ public abstract class MetadataParser extends XMLParser implements XMLConstants {
 				invalidAttributeValue(UPDATE_DESCRIPTOR_ELEMENT, UPDATE_DESCRIPTOR_SEVERITY, values[2]);
 				severity = IUpdateDescriptor.NORMAL;
 			}
-			descriptor = MetadataFactory.createUpdateDescriptor(values[0], range, severity, values[3]);
+			URI location = parseURIAttribute(attributes, false);
+			descriptor = MetadataFactory.createUpdateDescriptor(values[0], range, severity, values[3], location);
 		}
 
 		public IUpdateDescriptor getUpdateDescriptor() {
