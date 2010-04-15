@@ -16,8 +16,7 @@ import org.eclipse.equinox.internal.p2.core.helpers.LogHelper;
 import org.eclipse.equinox.p2.engine.IProfile;
 import org.eclipse.equinox.p2.engine.ProvisioningContext;
 import org.eclipse.equinox.p2.engine.spi.*;
-import org.eclipse.equinox.p2.metadata.ITouchpointType;
-import org.eclipse.equinox.p2.metadata.MetadataFactory;
+import org.eclipse.equinox.p2.metadata.*;
 import org.eclipse.osgi.util.NLS;
 
 public abstract class Phase {
@@ -122,10 +121,9 @@ public abstract class Phase {
 				return;
 			}
 
-			ITouchpointType touchpointType = getTouchpointType(operand);
-			if (touchpointType != null) {
-				operandParameters.put(IActionExecutor.PARM_ACTION_EXECUTOR, new ActionExecutor(profile, session, operand, subMonitor, touchpointType));
-			}
+			final IInstallableUnit iu = (IInstallableUnit) operandParameters.get(InstallableUnitPhase.PARM_IU);
+			if (iu != null)
+				operandParameters.put(IActionExecutor.PARM_ACTION_EXECUTOR, new ActionExecutor(profile, session, operand, subMonitor, iu.getTouchpointType()));
 
 			Touchpoint operandTouchpoint = (Touchpoint) operandParameters.get(PARM_TOUCHPOINT);
 			if (operandTouchpoint != null) {
@@ -239,6 +237,9 @@ public abstract class Phase {
 
 				operandParameters = touchpointToTouchpointOperandParameters.get(operandTouchpoint);
 			}
+			final IInstallableUnit iu = (IInstallableUnit) operandParameters.get(InstallableUnitPhase.PARM_IU);
+			if (iu != null)
+				operandParameters.put(IActionExecutor.PARM_ACTION_EXECUTOR, new ActionExecutor(profile, session, operand, new NullProgressMonitor(), iu.getTouchpointType()));
 			operandParameters = Collections.unmodifiableMap(operandParameters);
 		}
 		for (int j = 0; j < actions.length; j++) {
@@ -321,10 +322,6 @@ public abstract class Phase {
 
 	protected IStatus initializeOperand(IProfile profile, Operand operand, Map<String, Object> parameters, IProgressMonitor monitor) {
 		return Status.OK_STATUS;
-	}
-
-	protected ITouchpointType getTouchpointType(Operand operand) {
-		return null;
 	}
 
 	protected abstract List<ProvisioningAction> getActions(Operand operand);
