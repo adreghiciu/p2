@@ -20,8 +20,15 @@ import org.eclipse.equinox.p2.engine.IProfile;
 import org.eclipse.equinox.p2.engine.IProfileRegistry;
 import org.eclipse.equinox.p2.metadata.IInstallableUnit;
 import org.eclipse.equinox.p2.metadata.IRequirement;
+import org.eclipse.equinox.p2.planner.IPlanner;
 import org.eclipse.equinox.p2.planner.IProfileChangeRequest;
 
+/**
+ * @noreference This class was unintentionally left in the provisional API package and
+ * 	is intended to be made internal in Eclipse 3.7. Clients should create and manipulate 
+ * 	profile change requests via the API {@link IPlanner#createChangeRequest(IProfile)}
+ * 	and methods on {@link IProfileChangeRequest}.
+ */
 public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 
 	private final IProfile profile;
@@ -157,7 +164,8 @@ public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 			keys = new ArrayList<String>();
 			iuPropertiesToRemove.put(iu, keys);
 		}
-		keys.add(key);
+		if (!keys.contains(key))
+			keys.add(key);
 	}
 
 	public Collection<IInstallableUnit> getRemovals() {
@@ -264,5 +272,9 @@ public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 
 	public Collection<IRequirement> getExtraRequirements() {
 		return additionalRequirements;
+	}
+
+	public void clearExtraRequirements() {
+		additionalRequirements = null;
 	}
 }
