@@ -33,7 +33,6 @@ public abstract class AbstractDiscoveryStrategy {
 	protected List<Tag> tags;
 
 	public void dispose() {
-		// ignore
 	}
 
 	public List<CatalogCategory> getCategories() {

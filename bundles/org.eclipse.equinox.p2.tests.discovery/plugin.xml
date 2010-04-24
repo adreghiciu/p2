@@ -30,7 +30,7 @@
       </connectorDescriptor>
       <connectorDescriptor
             categoryId="org.eclipse.mylyn.discovery.tests.connectorCategory1"
-            description="Connector with id org.eclipse.mylyn.discovery.test1"
+            description="Trac Connector"
             id="org.eclipse.mylyn.discovery.test1"
             kind="task"
             license="License"
@@ -40,7 +40,7 @@
       </connectorDescriptor>
       <connectorDescriptor
             categoryId="org.eclipse.mylyn.discovery.tests.connectorCategory1"
-            description="Connector with id org.eclipse.mylyn.discovery.2tests"
+            description="Trac Connector"
             id="org.eclipse.mylyn.discovery.2tests"
             kind="task"
             license="License"
@@ -62,16 +62,6 @@
             %certification.description
          </description>
       </certification>
-      <connectorDescriptor
-            categoryId="org.eclipse.mylyn.discovery.tests.connectorCategory1"
-            description="Tagged as Custom"
-            id="org.eclipse.mylyn.discovery.test.tagged"
-            kind="Custom"
-            license="License"
-            name="Tagged Connector"
-            provider="Eclipse Mylyn"
-            siteUrl="http://localhost/discovery/">
-      </connectorDescriptor>
    </extension>
    <extension
          point="org.eclipse.ui.menus">
@@ -81,23 +71,11 @@
                commandId="org.eclipse.equinox.p2.ui.discovery.commands.ShowBundleCatalog"
                label="Show Bundle Catalog..."
                style="push">
-            <parameter
-                  name="org.eclipse.equinox.p2.ui.discovery.commands.DirectoryParameter"
-                  value="http://www.eclipse.org/mylyn/discovery/directory-3.3.xml">
-            </parameter>
-            <parameter
-                  name="org.eclipse.equinox.p2.ui.discovery.commands.TagsParameter"
-                  value="document=Documents,task=Tasks,vcs=Version Control">
-            </parameter>
          </command>
          <command
                commandId="org.eclipse.equinox.p2.ui.discovery.commands.ShowRepositoryCatalog"
                label="Show Repository Catalog..."
                style="push">
-            <parameter
-                  name="org.eclipse.equinox.p2.ui.discovery.commands.RepositoryParameter"
-                  value="http://download.eclipse.org/tools/mylyn/update/e3.4">
-            </parameter>
          </command>
       </menuContribution>
    </extension>

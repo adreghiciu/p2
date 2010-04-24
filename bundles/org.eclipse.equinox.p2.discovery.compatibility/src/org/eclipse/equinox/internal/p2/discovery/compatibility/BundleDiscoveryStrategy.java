@@ -24,10 +24,6 @@ import org.osgi.framework.Bundle;
  */
 public class BundleDiscoveryStrategy extends AbstractDiscoveryStrategy {
 
-	public BundleDiscoveryStrategy() {
-		// constructor
-	}
-
 	@Override
 	public void performDiscovery(IProgressMonitor monitor) throws CoreException {
 		if (items == null || categories == null) {
@@ -83,8 +79,6 @@ public class BundleDiscoveryStrategy extends AbstractDiscoveryStrategy {
 				}
 				monitor.worked(1);
 			}
-
-			tags.addAll(extensionReader.getTags());
 		} finally {
 			monitor.done();
 		}

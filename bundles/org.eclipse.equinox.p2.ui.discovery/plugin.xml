@@ -16,25 +16,10 @@
       <command
             id="org.eclipse.equinox.p2.ui.discovery.commands.ShowBundleCatalog"
             name="Show Bundle Catalog">
-         <commandParameter
-               id="org.eclipse.equinox.p2.ui.discovery.commands.DirectoryParameter"
-               name="Directory URL"
-               optional="true">
-         </commandParameter>
-         <commandParameter
-               id="org.eclipse.equinox.p2.ui.discovery.commands.TagsParameter"
-               name="Tags"
-               optional="true">
-         </commandParameter>
       </command>
       <command
             id="org.eclipse.equinox.p2.ui.discovery.commands.ShowRepositoryCatalog"
             name="Show Repository Catalog">
-         <commandParameter
-               id="org.eclipse.equinox.p2.ui.discovery.commands.RepositoryParameter"
-               name="P2 Repository URI"
-               optional="true">
-         </commandParameter>
       </command>
    </extension>
    <extension

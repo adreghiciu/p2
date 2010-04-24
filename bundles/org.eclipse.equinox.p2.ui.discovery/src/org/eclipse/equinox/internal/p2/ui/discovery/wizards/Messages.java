@@ -38,6 +38,10 @@ public class Messages extends NLS {
 
 	public static String InstallConnectorsJob_unexpectedError_url;
 
+	public static String ConnectorDiscoveryWizardMainPage_clearButton_accessibleListener;
+
+	public static String ConnectorDiscoveryWizardMainPage_clearButton_toolTip;
+
 	public static String ConnectorDiscoveryWizardMainPage_connectorDiscovery;
 
 	public static String ConnectorDiscoveryWizardMainPage_filterLabel;
@@ -80,7 +84,6 @@ public class Messages extends NLS {
 	}
 
 	private Messages() {
-		// constructor
 	}
 
 }

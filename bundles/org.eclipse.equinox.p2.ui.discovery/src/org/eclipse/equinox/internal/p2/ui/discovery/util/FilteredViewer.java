@@ -14,13 +14,17 @@
 package org.eclipse.equinox.internal.p2.ui.discovery.util;
 
 import org.eclipse.core.runtime.*;
+import org.eclipse.equinox.internal.p2.ui.discovery.DiscoveryImages;
 import org.eclipse.equinox.internal.p2.ui.discovery.wizards.Messages;
 import org.eclipse.jface.layout.GridDataFactory;
 import org.eclipse.jface.layout.GridLayoutFactory;
 import org.eclipse.jface.viewers.StructuredViewer;
 import org.eclipse.jface.viewers.Viewer;
 import org.eclipse.swt.SWT;
+import org.eclipse.swt.accessibility.*;
 import org.eclipse.swt.events.*;
+import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.graphics.Point;
 import org.eclipse.swt.layout.GridData;
 import org.eclipse.swt.widgets.*;
 import org.eclipse.ui.progress.WorkbenchJob;
@@ -32,19 +36,36 @@ import org.eclipse.ui.progress.WorkbenchJob;
  */
 public abstract class FilteredViewer {
 
-	private boolean automaticFind;
+	private static Boolean useNativeSearchField;
+
+	private static boolean useNativeSearchField(Composite composite) {
+		if (useNativeSearchField == null) {
+			useNativeSearchField = Boolean.FALSE;
+			Text testText = null;
+			try {
+				testText = new Text(composite, SWT.SEARCH | SWT.ICON_CANCEL);
+				useNativeSearchField = new Boolean((testText.getStyle() & SWT.ICON_CANCEL) != 0);
+			} finally {
+				if (testText != null) {
+					testText.dispose();
+				}
+			}
+
+		}
+		return useNativeSearchField;
+	}
 
 	private Label clearFilterTextControl;
 
 	private Composite container;
 
-	TextSearchControl filterText;
+	private Text filterText;
 
 	private int minimumHeight;
 
-	String previousFilterText = ""; //$NON-NLS-1$
+	private String previousFilterText = ""; //$NON-NLS-1$
 
-	WorkbenchJob refreshJob;
+	private WorkbenchJob refreshJob;
 
 	private long refreshJobDelay = 200L;
 
@@ -55,12 +76,95 @@ public abstract class FilteredViewer {
 	private Composite header;
 
 	public FilteredViewer() {
-		setAutomaticFind(true);
+		// constructor
 	}
 
-	void clearFilterText() {
-		filterText.getTextControl().setText(""); //$NON-NLS-1$
+	private void clearFilterText() {
+		filterText.setText(""); //$NON-NLS-1$
 		filterTextChanged();
+	}
+
+	private Label createClearFilterTextControl(Composite filterContainer, final Text filterText) {
+		final Image inactiveImage = DiscoveryImages.FIND_CLEAR_DISABLED.createImage();
+		final Image activeImage = DiscoveryImages.FIND_CLEAR.createImage();
+		final Image pressedImage = new Image(filterContainer.getDisplay(), activeImage, SWT.IMAGE_GRAY);
+
+		final Label clearButton = new Label(filterContainer, SWT.NONE);
+		clearButton.setLayoutData(new GridData(SWT.BEGINNING, SWT.CENTER, false, false));
+		clearButton.setImage(inactiveImage);
+		clearButton.setToolTipText(Messages.ConnectorDiscoveryWizardMainPage_clearButton_toolTip);
+		clearButton.setBackground(filterContainer.getDisplay().getSystemColor(SWT.COLOR_LIST_BACKGROUND));
+		clearButton.addMouseListener(new MouseAdapter() {
+			private MouseMoveListener fMoveListener;
+
+			private boolean isMouseInButton(MouseEvent e) {
+				Point buttonSize = clearButton.getSize();
+				return 0 <= e.x && e.x < buttonSize.x && 0 <= e.y && e.y < buttonSize.y;
+			}
+
+			@Override
+			public void mouseDown(MouseEvent e) {
+				clearButton.setImage(pressedImage);
+				fMoveListener = new MouseMoveListener() {
+					private boolean fMouseInButton = true;
+
+					public void mouseMove(MouseEvent e) {
+						boolean mouseInButton = isMouseInButton(e);
+						if (mouseInButton != fMouseInButton) {
+							fMouseInButton = mouseInButton;
+							clearButton.setImage(mouseInButton ? pressedImage : inactiveImage);
+						}
+					}
+				};
+				clearButton.addMouseMoveListener(fMoveListener);
+			}
+
+			@Override
+			public void mouseUp(MouseEvent e) {
+				if (fMoveListener != null) {
+					clearButton.removeMouseMoveListener(fMoveListener);
+					fMoveListener = null;
+					boolean mouseInButton = isMouseInButton(e);
+					clearButton.setImage(mouseInButton ? activeImage : inactiveImage);
+					if (mouseInButton) {
+						clearFilterText();
+						filterText.setFocus();
+					}
+				}
+			}
+		});
+		clearButton.addMouseTrackListener(new MouseTrackListener() {
+			public void mouseEnter(MouseEvent e) {
+				clearButton.setImage(activeImage);
+			}
+
+			public void mouseExit(MouseEvent e) {
+				clearButton.setImage(inactiveImage);
+			}
+
+			public void mouseHover(MouseEvent e) {
+			}
+		});
+		clearButton.addDisposeListener(new DisposeListener() {
+			public void widgetDisposed(DisposeEvent e) {
+				inactiveImage.dispose();
+				activeImage.dispose();
+				pressedImage.dispose();
+			}
+		});
+		clearButton.getAccessible().addAccessibleListener(new AccessibleAdapter() {
+			@Override
+			public void getName(AccessibleEvent e) {
+				e.result = Messages.ConnectorDiscoveryWizardMainPage_clearButton_accessibleListener;
+			}
+		});
+		clearButton.getAccessible().addAccessibleControlListener(new AccessibleControlAdapter() {
+			@Override
+			public void getRole(AccessibleControlEvent e) {
+				e.detail = ACC.ROLE_PUSHBUTTON;
+			}
+		});
+		return clearButton;
 	}
 
 	public void createControl(Composite parent) {
@@ -91,31 +195,47 @@ public abstract class FilteredViewer {
 		};
 	}
 
-	private void doCreateFindControl(Composite parent) {
-		Label label = new Label(parent, SWT.NONE);
+	private void doCreateFindControl(Composite header) {
+		Label label = new Label(header, SWT.NONE);
 		label.setText(Messages.ConnectorDiscoveryWizardMainPage_filterLabel);
-		GridDataFactory.swtDefaults().align(SWT.BEGINNING, SWT.CENTER).applyTo(label);
 
-		filterText = new TextSearchControl(parent, automaticFind);
-		if (automaticFind) {
-			filterText.addModifyListener(new ModifyListener() {
-				public void modifyText(ModifyEvent e) {
-					filterTextChanged();
-				}
-			});
+		Composite textFilterContainer;
+		boolean nativeSearch = useNativeSearchField(header);
+		if (nativeSearch) {
+			textFilterContainer = new Composite(header, SWT.NONE);
+		} else {
+			textFilterContainer = new Composite(header, SWT.BORDER);
+			textFilterContainer.setBackground(header.getDisplay().getSystemColor(SWT.COLOR_LIST_BACKGROUND));
 		}
-		filterText.addSelectionListener(new SelectionAdapter() {
-			@Override
-			public void widgetDefaultSelected(SelectionEvent e) {
-				if (e.detail == SWT.ICON_CANCEL) {
-					clearFilterText();
-				} else {
-					// search icon and enter
-					filterTextChanged();
-				}
+		GridDataFactory.fillDefaults().grab(true, false).applyTo(textFilterContainer);
+		GridLayoutFactory.fillDefaults().numColumns(2).applyTo(textFilterContainer);
+
+		if (nativeSearch) {
+			filterText = new Text(textFilterContainer, SWT.SINGLE | SWT.BORDER | SWT.SEARCH | SWT.ICON_CANCEL);
+		} else {
+			filterText = new Text(textFilterContainer, SWT.SINGLE);
+		}
+
+		filterText.addModifyListener(new ModifyListener() {
+			public void modifyText(ModifyEvent e) {
+				filterTextChanged();
 			}
 		});
-		GridDataFactory.fillDefaults().grab(true, false).align(SWT.FILL, SWT.CENTER).applyTo(filterText);
+		if (nativeSearch) {
+			filterText.addSelectionListener(new SelectionAdapter() {
+				@Override
+				public void widgetDefaultSelected(SelectionEvent e) {
+					if (e.detail == SWT.ICON_CANCEL) {
+						clearFilterText();
+					}
+				}
+			});
+			GridDataFactory.fillDefaults().grab(true, false).span(2, 1).applyTo(filterText);
+		} else {
+			GridDataFactory.fillDefaults().grab(true, false).applyTo(filterText);
+			clearFilterTextControl = createClearFilterTextControl(textFilterContainer, filterText);
+			clearFilterTextControl.setVisible(false);
+		}
 	}
 
 	private void doCreateHeader() {
@@ -130,7 +250,7 @@ public abstract class FilteredViewer {
 		GridLayoutFactory.fillDefaults().numColumns(header.getChildren().length).applyTo(header);
 	}
 
-	protected void doCreateHeaderControls(Composite parent) {
+	protected void doCreateHeaderControls(Composite header) {
 		// ignore
 	}
 
@@ -154,7 +274,7 @@ public abstract class FilteredViewer {
 				if (filterText.isDisposed()) {
 					return Status.CANCEL_STATUS;
 				}
-				String text = filterText.getTextControl().getText();
+				String text = filterText.getText();
 				text = text.trim();
 
 				if (!previousFilterText.equals(text)) {
@@ -166,7 +286,7 @@ public abstract class FilteredViewer {
 		};
 	}
 
-	protected abstract StructuredViewer doCreateViewer(Composite parent);
+	protected abstract StructuredViewer doCreateViewer(Composite container);
 
 	protected void doFind(String text) {
 		searchFilter.setPattern(text);
@@ -176,23 +296,13 @@ public abstract class FilteredViewer {
 		viewer.refresh(true);
 	}
 
-	/**
-	 * Invoked whenever the filter text is changed or the user otherwise causes the filter text to change.
-	 */
-	protected void filterTextChanged() {
+	private void filterTextChanged() {
 		if (refreshJob == null) {
 			refreshJob = doCreateRefreshJob();
 		} else {
 			refreshJob.cancel();
 		}
 		refreshJob.schedule(refreshJobDelay);
-	}
-
-	/**
-	 * Provides the text string of the search widget.
-	 */
-	protected String getFilterText() {
-		return filterText == null ? null : filterText.getTextControl().getText();
 	}
 
 	public Control getControl() {
@@ -220,17 +330,6 @@ public abstract class FilteredViewer {
 
 	protected void setRefreshJobDelay(long refreshJobDelay) {
 		this.refreshJobDelay = refreshJobDelay;
-	}
-
-	public final void setAutomaticFind(boolean automaticFind) {
-		if (filterText != null) {
-			throw new IllegalStateException("setAutomaticFind() needs be invoked before controls are created"); //$NON-NLS-1$
-		}
-		this.automaticFind = automaticFind;
-	}
-
-	public final boolean isAutomaticFind() {
-		return automaticFind;
 	}
 
 }

@@ -35,7 +35,6 @@ public class RemoteBundleDiscoveryStrategyTest extends TestCase {
 		discoveryStrategy.setCategories(new ArrayList<CatalogCategory>());
 		discoveryStrategy.setItems(new ArrayList<CatalogItem>());
 		discoveryStrategy.setCertifications(new ArrayList<Certification>());
-		discoveryStrategy.setTags(new ArrayList<Tag>());
 	}
 
 	public void testPerformDiscovery() throws CoreException, IOException {
