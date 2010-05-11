@@ -211,6 +211,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 		fragment.setTouchpointType(TOUCHPOINT_OSGI);
 		fragment.addTouchpointData(NO_TP_DATA);
 		fragment.setHost(BUNDLE_REQUIREMENT);
+		fragment.setCapabilities(new IProvidedCapability[] {getSelfCapability(name, fragment.getVersion())});
 		return MetadataFactory.createInstallableUnitFragment(fragment);
 
 		//		return createIUFragment(null, name, DEFAULT_VERSION, BUNDLE_REQUIREMENT, TOUCHPOINT_OSGI, NO_TP_DATA);
@@ -403,7 +404,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 			iu.setProperty(nextKey, nextValue);
 		}
 		iu.setCapabilities(provides);
-		iu.setRequiredCapabilities(required);
+		iu.setRequirements(required);
 		iu.setTouchpointType(tpType);
 		if (tpData != null)
 			iu.addTouchpointData(tpData);
@@ -412,7 +413,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 		iu.setRequirementChanges(reqChanges);
 		iu.setApplicabilityScope(scope);
 		iu.setLifeCycle(lifeCycle);
-		iu.setMetaRequiredCapabilities(metaRequirements);
+		iu.setMetaRequirements(metaRequirements);
 		return MetadataFactory.createInstallableUnitPatch(iu);
 	}
 
@@ -432,7 +433,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 			iu.setProperty(nextKey, nextValue);
 		}
 		iu.setCapabilities(provides);
-		iu.setRequiredCapabilities(required);
+		iu.setRequirements(required);
 		iu.setTouchpointType(tpType);
 		if (tpData != null)
 			iu.addTouchpointData(tpData);
@@ -440,7 +441,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 		iu.setUpdateDescriptor(update);
 		if (metaRequirements == null)
 			metaRequirements = NO_REQUIRES;
-		iu.setMetaRequiredCapabilities(metaRequirements);
+		iu.setMetaRequirements(metaRequirements);
 		return MetadataFactory.createInstallableUnit(iu);
 	}
 
@@ -461,7 +462,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 		fragment.setId(name);
 		fragment.setVersion(version);
 		fragment.setProperty(org.eclipse.equinox.p2.metadata.MetadataFactory.InstallableUnitDescription.PROP_TYPE_FRAGMENT, Boolean.TRUE.toString());
-		fragment.setRequiredCapabilities(required);
+		fragment.setRequirements(required);
 		fragment.setTouchpointType(tpType);
 		if (tpData != null)
 			fragment.addTouchpointData(tpData);
@@ -496,9 +497,9 @@ public abstract class AbstractProvisioningTest extends TestCase {
 		Collection<ILicense> originalLicenses = prototype.getLicenses();
 		desc.setLicenses(originalLicenses.toArray(new ILicense[originalLicenses.size()]));
 		Collection<IRequirement> originalRequirements = prototype.getRequirements();
-		desc.setRequiredCapabilities(originalRequirements.toArray(new IRequirement[originalRequirements.size()]));
+		desc.setRequirements(originalRequirements.toArray(new IRequirement[originalRequirements.size()]));
 		originalRequirements = prototype.getMetaRequirements();
-		desc.setMetaRequiredCapabilities(originalRequirements.toArray(new IRequirement[originalRequirements.size()]));
+		desc.setMetaRequirements(originalRequirements.toArray(new IRequirement[originalRequirements.size()]));
 		desc.setSingleton(prototype.isSingleton());
 		desc.setTouchpointType(MetadataFactory.createTouchpointType(prototype.getTouchpointType().getId(), prototype.getTouchpointType().getVersion()));
 		desc.setUpdateDescriptor(MetadataFactory.createUpdateDescriptor(prototype.getUpdateDescriptor().getIUsBeingUpdated(), prototype.getUpdateDescriptor().getSeverity(), prototype.getUpdateDescriptor().getDescription(), null));
@@ -1508,5 +1509,57 @@ public abstract class AbstractProvisioningTest extends TestCase {
 
 	public IPlanner getPlanner(IProvisioningAgent agent) {
 		return (IPlanner) agent.getService(IPlanner.SERVICE_NAME);
+	}
+
+	public void assertNoContents(File file, String[] lines) {
+		if (!file.exists())
+			fail("File: " + file.toString() + " can't be found.");
+		int idx = 0;
+		try {
+			BufferedReader reader = null;
+			try {
+				reader = new BufferedReader(new FileReader(file));
+				while (reader.ready()) {
+					String line = reader.readLine();
+					if (line.indexOf(lines[idx]) > 0) {
+						fail("String: " + lines[idx] + " should not be in " + file.getAbsolutePath());
+					}
+				}
+			} finally {
+				if (reader != null)
+					reader.close();
+			}
+		} catch (FileNotFoundException e) {
+			//ignore, caught before
+		} catch (IOException e) {
+			fail("Exception while reading: " + file.getAbsolutePath());
+		}
+	}
+
+	public void assertContents(File file, String[] lines) {
+		if (!file.exists())
+			fail("File: " + file.toString() + " can't be found.");
+		int idx = 0;
+		try {
+			BufferedReader reader = null;
+			try {
+				reader = new BufferedReader(new FileReader(file));
+				while (reader.ready()) {
+					String line = reader.readLine();
+					if (line.indexOf(lines[idx]) >= 0) {
+						if (++idx >= lines.length)
+							return;
+					}
+				}
+			} finally {
+				if (reader != null)
+					reader.close();
+			}
+		} catch (FileNotFoundException e) {
+			//ignore, caught before
+		} catch (IOException e) {
+			fail("String: " + lines[idx] + " not found in " + file.getAbsolutePath());
+		}
+		fail("String:" + lines[idx] + " not found");
 	}
 }

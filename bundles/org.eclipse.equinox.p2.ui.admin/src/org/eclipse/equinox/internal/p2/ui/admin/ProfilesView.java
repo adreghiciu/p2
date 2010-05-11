@@ -81,7 +81,7 @@ public class ProfilesView extends ProvView {
 
 	protected void addListeners() {
 		super.addListeners();
-		listener = new StructuredViewerProvisioningListener(viewer, ProvUIProvisioningListener.PROV_EVENT_IU | ProvUIProvisioningListener.PROV_EVENT_PROFILE);
+		listener = new StructuredViewerProvisioningListener(getClass().getName(), viewer, ProvUIProvisioningListener.PROV_EVENT_IU | ProvUIProvisioningListener.PROV_EVENT_PROFILE);
 		ProvUI.addProvisioningListener(listener);
 	}
 
@@ -207,6 +207,9 @@ public class ProfilesView extends ProvView {
 	}
 
 	protected ProvisioningUI getProvisioningUI() {
-		return ProvAdminUIActivator.getDefault().getProvisioningUI(getProfileId());
+		ProvisioningUI ui = ProvAdminUIActivator.getDefault().getProvisioningUI(getProfileId());
+		if (ui != null)
+			return ui;
+		return super.getProvisioningUI();
 	}
 }

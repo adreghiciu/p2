@@ -40,6 +40,7 @@ public class AllTests extends TestCase {
 		suite.addTestSuite(Bug259537.class);
 		suite.addTestSuite(Bug262580.class);
 		suite.addTestSuite(Bug270656.class);
+		suite.addTestSuite(Bug270668.class);
 		suite.addTestSuite(Bug270683.class);
 		suite.addTestSuite(Bug271067.class);
 		suite.addTestSuite(Bug271954.class);
@@ -49,13 +50,19 @@ public class AllTests extends TestCase {
 		suite.addTestSuite(Bug302582b.class);
 		suite.addTestSuite(Bug302582c.class);
 		//		suite.addTestSuite(Bug302582d.class);
+		suite.addTestSuite(Bug306424.class);
+		// suite.addTestSuite(Bug306279.class);
+		// suite.addTestSuite(Bug306279b.class);
+		suite.addTestSuite(Bug306279c.class);
+		suite.addTestSuite(Bug306279d.class);
+		suite.addTestSuite(Bug311330.class);
 		suite.addTestSuite(DependencyOnSelf.class);
 		suite.addTestSuite(DisabledExplanation.class);
 		suite.addTestSuite(DropinsScenario.class);
 		suite.addTestSuite(ExplanationDeepConflict.class);
 		suite.addTestSuite(ExplanationForOptionalDependencies.class);
 		suite.addTestSuite(ExplanationForPartialInstallation.class);
-		//		suite.addTestSuite(ExplanationLargeConflict.class);
+		suite.addTestSuite(ExplanationLargeConflict.class);
 		suite.addTestSuite(ExplanationSeveralConflictingRoots.class);
 		suite.addTestSuite(GreedyRequirement.class);
 		suite.addTestSuite(InclusionRuleTest.class);
@@ -99,6 +106,8 @@ public class AllTests extends TestCase {
 		suite.addTestSuite(PatchTest7b.class);
 		suite.addTestSuite(PatchTest8.class);
 		suite.addTestSuite(PatchTest9.class);
+		suite.addTestSuite(PatchTest10.class);
+		suite.addTestSuite(PatchTest12.class);
 		suite.addTestSuite(PatchTestMultiplePatch.class);
 		suite.addTestSuite(PatchTestMultiplePatch2.class);
 		suite.addTestSuite(PatchTestMultiplePatch3.class);
@@ -131,8 +140,10 @@ public class AllTests extends TestCase {
 		suite.addTestSuite(SingletonOptionallyInstalled.class);
 		suite.addTestSuite(SingletonOptionallyInstalled2.class);
 		suite.addTestSuite(SWTFragment.class);
+		suite.addTestSuite(TopLevelFilterTest.class);
 		suite.addTestSuite(TwoVersionsOfWSDL.class);
 		suite.addTestSuite(UninstallEverything.class);
+		suite.addTestSuite(UpdateForTwoIUs.class);
 		suite.addTestSuite(UpdateQueryTest.class);
 		return suite;
 	}

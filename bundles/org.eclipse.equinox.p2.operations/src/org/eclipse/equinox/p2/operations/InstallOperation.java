@@ -12,15 +12,15 @@
 
 package org.eclipse.equinox.p2.operations;
 
-import org.eclipse.equinox.p2.planner.ProfileInclusionRules;
-
 import java.util.Collection;
 import org.eclipse.core.runtime.*;
+import org.eclipse.equinox.internal.p2.director.Explanation;
 import org.eclipse.equinox.internal.p2.operations.*;
-import org.eclipse.equinox.internal.provisional.p2.director.ProfileChangeRequest;
-import org.eclipse.equinox.p2.engine.IProfile;
+import org.eclipse.equinox.internal.provisional.p2.director.*;
+import org.eclipse.equinox.p2.engine.*;
 import org.eclipse.equinox.p2.engine.query.UserVisibleRootQuery;
 import org.eclipse.equinox.p2.metadata.IInstallableUnit;
+import org.eclipse.equinox.p2.planner.ProfileInclusionRules;
 import org.eclipse.equinox.p2.query.IQueryResult;
 import org.eclipse.equinox.p2.query.QueryUtil;
 
@@ -143,5 +143,34 @@ public class InstallOperation extends ProfileChangeOperation {
 	protected String getProvisioningJobName() {
 		return Messages.InstallOperation_InstallJobName;
 
+	}
+
+	@Override
+	ProvisioningContext getFirstPassProvisioningContext() {
+		// Set it back to no referencing for first pass in case we reuse this context.
+		context.setProperty(ProvisioningContext.FOLLOW_REPOSITORY_REFERENCES, null);
+		return context;
+	}
+
+	@Override
+	IFailedStatusEvaluator getSecondPassEvaluator() {
+		return new IFailedStatusEvaluator() {
+			public ProvisioningContext getSecondPassProvisioningContext(IProvisioningPlan failedPlan) {
+				// Follow metadata repository references if the first try fails
+				// There should be real API for this!
+				if (missingRequirement(failedPlan))
+					context.setProperty(ProvisioningContext.FOLLOW_REPOSITORY_REFERENCES, Boolean.toString(true));
+				return context;
+			}
+		};
+	}
+
+	// this is very reachy
+	private boolean missingRequirement(IProvisioningPlan failedPlan) {
+		IStatus status = failedPlan.getStatus();
+		RequestStatus requestStatus = null;
+		if (status instanceof PlannerStatus)
+			requestStatus = ((PlannerStatus) status).getRequestStatus();
+		return requestStatus != null && requestStatus.getShortExplanation() == Explanation.MISSING_REQUIREMENT;
 	}
 }

@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2009 IBM Corporation and others.
+ * Copyright (c) 2009, 2010 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -73,6 +73,7 @@ public class RepositorySelectionGroup {
 	ControlDecoration repoDec;
 	ComboAutoCompleteField repoAutoComplete;
 	ProvUIProvisioningListener comboRepoListener;
+	IRepositoryManipulationHook repositoryManipulationHook;
 
 	Image info, warning, error;
 	URI[] comboRepos; // the URIs shown in the combo, kept in sync with combo items
@@ -131,7 +132,7 @@ public class RepositorySelectionGroup {
 		repoCombo.addKeyListener(new KeyAdapter() {
 
 			public void keyPressed(KeyEvent e) {
-				if (e.keyCode == SWT.CR)
+				if (e.keyCode == SWT.CR || e.keyCode == SWT.KEYPAD_CR)
 					addRepository(false);
 			}
 		});
@@ -204,7 +205,11 @@ public class RepositorySelectionGroup {
 		// Link to repository manipulator
 		repoManipulatorLink = createLink(comboComposite, new Action() {
 			public void runWithEvent(Event event) {
+				if (repositoryManipulationHook != null)
+					repositoryManipulationHook.preManipulateRepositories();
 				ui.manipulateRepositories(repoCombo.getShell());
+				if (repositoryManipulationHook != null)
+					repositoryManipulationHook.postManipulateRepositories();
 			}
 		}, getLinkLabel());
 		gd = new GridData(SWT.END, SWT.FILL, true, false);
@@ -257,6 +262,10 @@ public class RepositorySelectionGroup {
 				fillRepoCombo(SITE_NONE);
 		}
 		setRepoComboDecoration(null);
+	}
+
+	public void setRepositoryManipulationHook(IRepositoryManipulationHook hook) {
+		this.repositoryManipulationHook = hook;
 	}
 
 	protected void setRepoComboDecoration(final IStatus status) {
@@ -363,7 +372,7 @@ public class RepositorySelectionGroup {
 	String getSiteString(URI uri) {
 		String nickname = getMetadataRepositoryManager().getRepositoryProperty(uri, IRepository.PROP_NICKNAME);
 		if (nickname != null && nickname.length() > 0)
-			return NLS.bind(ProvUIMessages.AvailableIUsPage_NameWithLocation, nickname, URIUtil.toUnencodedString(uri));
+			return NLS.bind(ProvUIMessages.AvailableIUsPage_NameWithLocation, new Object[] {nickname, ProvUIMessages.RepositorySelectionGroup_NameAndLocationSeparator, URIUtil.toUnencodedString(uri)});
 		return URIUtil.toUnencodedString(uri);
 	}
 
@@ -464,12 +473,21 @@ public class RepositorySelectionGroup {
 		} catch (URISyntaxException e) {
 			// never mind
 		}
+
+		// Special case.  The user has typed a URI with a trailing slash.
+		// Make a URI without the trailing slash and see if it matches
+		// a location we know about.
+		// see https://bugs.eclipse.org/bugs/show_bug.cgi?id=268580
+		int length = repoText.length();
+		if (length > 0 && repoText.charAt(length - 1) == '/') {
+			return getComboIndex(repoText.substring(0, length - 1));
+		}
 		return -1;
 	}
 
 	void addComboProvisioningListeners() {
 		// We need to monitor repository events so that we can adjust the repo combo.
-		comboRepoListener = new ProvUIProvisioningListener(ProvUIProvisioningListener.PROV_EVENT_METADATA_REPOSITORY) {
+		comboRepoListener = new ProvUIProvisioningListener(getClass().getName(), ProvUIProvisioningListener.PROV_EVENT_METADATA_REPOSITORY) {
 			protected void repositoryAdded(RepositoryEvent e) {
 				fillRepoCombo(getSiteString(e.getRepositoryLocation()));
 			}
@@ -495,10 +513,7 @@ public class RepositorySelectionGroup {
 
 	/*
 	 *  Add a repository using the text in the combo or launch a dialog if the text
-	 *  represents an already known repo.  For any add operation spawned by this
-	 *  method, we do not want to notify the UI with a special listener.  This is to
-	 *  prevent a multiple update flash because we intend to reset the available IU
-	 *  filter as soon as the new repo is added.
+	 *  represents an already known repo.  
 	 */
 	void addRepository(boolean alwaysPrompt) {
 		final RepositoryTracker manipulator = ui.getRepositoryTracker();
@@ -513,9 +528,27 @@ public class RepositorySelectionGroup {
 			AddRepositoryDialog dialog = new AddRepositoryDialog(repoCombo.getShell(), ui) {
 
 				protected String getInitialLocationText() {
-					if (isNewText)
-						return selectedRepo;
+					if (isNewText) {
+						// see https://bugs.eclipse.org/bugs/show_bug.cgi?id=293068
+						// we need to ensure any embedded nickname is stripped out
+						URI loc = manipulator.locationFromString(selectedRepo);
+						return loc.toString();
+					}
 					return super.getInitialLocationText();
+				}
+
+				@Override
+				protected String getInitialNameText() {
+					if (isNewText) {
+						URI loc = manipulator.locationFromString(selectedRepo);
+						// see https://bugs.eclipse.org/bugs/show_bug.cgi?id=293068
+						if (loc != null && manipulator instanceof ColocatedRepositoryTracker) {
+							String parsedNickname = ((ColocatedRepositoryTracker) manipulator).getParsedNickname(loc);
+							if (parsedNickname != null)
+								return parsedNickname;
+						}
+					}
+					return super.getInitialNameText();
 				}
 
 			};
@@ -543,7 +576,10 @@ public class RepositorySelectionGroup {
 							}
 						}
 						if (status.isOK() && location != null) {
-							manipulator.addRepository(location, null, ui.getSession());
+							String nick = null;
+							if (manipulator instanceof ColocatedRepositoryTracker)
+								nick = ((ColocatedRepositoryTracker) manipulator).getParsedNickname(location);
+							manipulator.addRepository(location, nick, ui.getSession());
 							fillRepoCombo(getSiteString(location));
 						}
 						setRepoComboDecoration(status);

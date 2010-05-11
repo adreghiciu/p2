@@ -52,13 +52,15 @@ public abstract class ControlListViewer extends StructuredViewer {
 		scrolled.getVerticalBar().setIncrement(height * 2);
 		scrolled.setExpandHorizontal(true);
 		scrolled.setExpandVertical(true);
+		// bug 311276: can cause unintended scrolling of viewer
+		//scrolled.setShowFocusedControl(true);
 
 		control = new Composite(scrolled, SWT.NONE) {
-			@Override
-			public boolean setFocus() {
-				forceFocus();
-				return true;
-			}
+//			@Override
+//			public boolean setFocus() {
+//				forceFocus();
+//				return true;
+//			}
 
 			@Override
 			public void setVisible(boolean visible) {

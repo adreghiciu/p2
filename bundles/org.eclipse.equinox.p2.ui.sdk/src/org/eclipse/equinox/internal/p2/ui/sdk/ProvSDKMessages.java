@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2007, 2009 IBM Corporation and others.
+ * Copyright (c) 2007, 2010 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -24,6 +24,9 @@ public class ProvSDKMessages extends NLS {
 		// load message values from bundle file
 		NLS.initializeMessages(BUNDLE_NAME, ProvSDKMessages.class);
 	}
+	public static String Handler_CannotLaunchUI;
+	public static String Handler_SDKUpdateUIMessageTitle;
+	public static String InstallNewSoftwareHandler_ProgressTaskName;
 	public static String PreferenceInitializer_Error;
 	public static String ProvisioningPreferencePage_AlwaysOpenWizard;
 	public static String ProvisioningPreferencePage_BrowsingPrefsGroup;
@@ -39,4 +42,5 @@ public class ProvSDKMessages extends NLS {
 	public static String SDKPolicy_PrefPageName;
 	public static String UpdateHandler_NoSitesMessage;
 	public static String UpdateHandler_NoSitesTitle;
+	public static String UpdateHandler_ProgressTaskName;
 }

@@ -20,8 +20,15 @@ import org.eclipse.equinox.p2.engine.IProfile;
 import org.eclipse.equinox.p2.engine.IProfileRegistry;
 import org.eclipse.equinox.p2.metadata.IInstallableUnit;
 import org.eclipse.equinox.p2.metadata.IRequirement;
+import org.eclipse.equinox.p2.planner.IPlanner;
 import org.eclipse.equinox.p2.planner.IProfileChangeRequest;
 
+/**
+ * @noreference This class was unintentionally left in the provisional API package and
+ * 	is intended to be made internal in Eclipse 3.7. Clients should create and manipulate 
+ * 	profile change requests via the API {@link IPlanner#createChangeRequest(IProfile)}
+ * 	and methods on {@link IProfileChangeRequest}.
+ */
 public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 
 	private final IProfile profile;
@@ -31,7 +38,6 @@ public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 	private HashMap<String, String> propertiesToAdd = null; // map of key->value for properties to be added
 	private HashMap<IInstallableUnit, Map<String, String>> iuPropertiesToAdd = null; // map iu->map of key->value pairs for properties to be added for an iu
 	private HashMap<IInstallableUnit, List<String>> iuPropertiesToRemove = null; // map of iu->list of property keys to be removed for an iu
-	private boolean isAbsolute = false; //Indicate whether or not the request is an absolute one
 	private ArrayList<IRequirement> additionalRequirements;
 
 	public static ProfileChangeRequest createByProfileId(IProvisioningAgent agent, String profileId) {
@@ -158,7 +164,8 @@ public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 			keys = new ArrayList<String>();
 			iuPropertiesToRemove.put(iu, keys);
 		}
-		keys.add(key);
+		if (!keys.contains(key))
+			keys.add(key);
 	}
 
 	public Collection<IInstallableUnit> getRemovals() {
@@ -219,14 +226,6 @@ public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 		removeInstallableUnitProfileProperty(iu, SimplePlanner.INCLUSION_RULES);
 	}
 
-	public void setAbsoluteMode(boolean absolute) {
-		isAbsolute = absolute;
-	}
-
-	public boolean getAbsolute() {
-		return isAbsolute;
-	}
-
 	@SuppressWarnings("unchecked")
 	public Object clone() {
 		ProfileChangeRequest result = new ProfileChangeRequest(profile);
@@ -244,19 +243,23 @@ public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 		result.append("==Profile change request for "); //$NON-NLS-1$
 		result.append(profile.getProfileId());
 		result.append('\n');
-		result.append("==Additions=="); //$NON-NLS-1$
-		result.append('\n');
-		for (IInstallableUnit iu : iusToAdd) {
-			result.append('\t');
-			result.append(iu);
+		if (iusToAdd != null) {
+			result.append("==Additions=="); //$NON-NLS-1$
 			result.append('\n');
+			for (IInstallableUnit iu : iusToAdd) {
+				result.append('\t');
+				result.append(iu);
+				result.append('\n');
+			}
 		}
-		result.append("==Removals=="); //$NON-NLS-1$
-		result.append('\n');
-		for (IInstallableUnit iu : iusToRemove) {
-			result.append('\t');
-			result.append(iu);
+		if (iusToRemove != null) {
+			result.append("==Removals=="); //$NON-NLS-1$
 			result.append('\n');
+			for (IInstallableUnit iu : iusToRemove) {
+				result.append('\t');
+				result.append(iu);
+				result.append('\n');
+			}
 		}
 		return result.toString();
 	}
@@ -269,5 +272,9 @@ public class ProfileChangeRequest implements Cloneable, IProfileChangeRequest {
 
 	public Collection<IRequirement> getExtraRequirements() {
 		return additionalRequirements;
+	}
+
+	public void clearExtraRequirements() {
+		additionalRequirements = null;
 	}
 }

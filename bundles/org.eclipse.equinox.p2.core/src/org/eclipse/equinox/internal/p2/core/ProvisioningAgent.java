@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2009 IBM Corporation and others.
+ * Copyright (c) 2009, 2010 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -27,7 +27,7 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 
 	private final Map<String, Object> agentServices = Collections.synchronizedMap(new HashMap<String, Object>());
 	private BundleContext context;
-	private boolean stopped = false;
+	private volatile boolean stopped = false;
 	private ServiceRegistration reg;
 	private final Map<ServiceReference, ServiceTracker> trackers = Collections.synchronizedMap(new HashMap<ServiceReference, ServiceTracker>());
 
@@ -36,47 +36,52 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 	 */
 	public ProvisioningAgent() {
 		super();
+		registerService(IProvisioningAgent.INSTALLER_AGENT, this);
+		registerService(IProvisioningAgent.INSTALLER_PROFILEID, "_SELF_"); //$NON-NLS-1$
 	}
 
 	/* (non-Javadoc)
 	 * @see org.eclipse.equinox.p2.core.IProvisioningAgent#getService(java.lang.String)
 	 */
 	public Object getService(String serviceName) {
-		checkRunning();
-		Object service = agentServices.get(serviceName);
-		if (service != null)
+		//synchronize so concurrent gets always obtain the same service
+		synchronized (agentServices) {
+			checkRunning();
+			Object service = agentServices.get(serviceName);
+			if (service != null)
+				return service;
+			//attempt to get factory service from service registry
+			ServiceReference[] refs;
+			try {
+				refs = context.getServiceReferences(IAgentServiceFactory.SERVICE_NAME, "(" + IAgentServiceFactory.PROP_CREATED_SERVICE_NAME + '=' + serviceName + ')'); //$NON-NLS-1$
+			} catch (InvalidSyntaxException e) {
+				e.printStackTrace();
+				return null;
+			}
+			if (refs == null || refs.length == 0)
+				return null;
+			//track the factory so that we can automatically remove the service when the factory goes away
+			ServiceTracker tracker = new ServiceTracker(context, refs[0], this);
+			tracker.open();
+			IAgentServiceFactory factory = (IAgentServiceFactory) tracker.getService();
+			if (factory == null) {
+				tracker.close();
+				return null;
+			}
+			service = factory.createService(this);
+			if (service == null) {
+				tracker.close();
+				return null;
+			}
+			registerService(serviceName, service);
+			trackers.put(refs[0], tracker);
 			return service;
-		//attempt to get factory service from service registry
-		ServiceReference[] refs;
-		try {
-			refs = context.getServiceReferences(IAgentServiceFactory.SERVICE_NAME, "(" + IAgentServiceFactory.PROP_CREATED_SERVICE_NAME + '=' + serviceName + ')'); //$NON-NLS-1$
-		} catch (InvalidSyntaxException e) {
-			e.printStackTrace();
-			return null;
 		}
-		if (refs == null || refs.length == 0)
-			return null;
-		//track the factory so that we can automatically remove the service when the factory goes away
-		ServiceTracker tracker = new ServiceTracker(context, refs[0], this);
-		tracker.open();
-		IAgentServiceFactory factory = (IAgentServiceFactory) tracker.getService();
-		if (factory == null) {
-			tracker.close();
-			return null;
-		}
-		service = factory.createService(this);
-		if (service == null) {
-			tracker.close();
-			return null;
-		}
-		registerService(serviceName, service);
-		trackers.put(refs[0], tracker);
-		return service;
 	}
 
-	private synchronized void checkRunning() {
+	private void checkRunning() {
 		if (stopped)
-			throw new RuntimeException("Attempt to access stopped agent: " + this); //$NON-NLS-1$
+			throw new IllegalStateException("Attempt to access stopped agent: " + this); //$NON-NLS-1$
 	}
 
 	public void registerService(String serviceName, Object service) {
@@ -106,11 +111,9 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 	}
 
 	public void unregisterService(String serviceName, Object service) {
-		synchronized (this) {
+		synchronized (agentServices) {
 			if (stopped)
 				return;
-		}
-		synchronized (agentServices) {
 			if (agentServices.get(serviceName) == service)
 				agentServices.remove(serviceName);
 		}
@@ -119,14 +122,17 @@ public class ProvisioningAgent implements IProvisioningAgent, ServiceTrackerCust
 	}
 
 	public void stop() {
+		List<Object> toStop;
+		synchronized (agentServices) {
+			toStop = new ArrayList<Object>(agentServices.values());
+		}
 		//give services a chance to do their own shutdown
-		for (Object service : agentServices.values()) {
+		for (Object service : toStop) {
 			if (service instanceof IAgentService)
-				((IAgentService) service).stop();
+				if (service != this)
+					((IAgentService) service).stop();
 		}
-		synchronized (this) {
-			stopped = true;
-		}
+		stopped = true;
 		//close all service trackers
 		synchronized (trackers) {
 			for (ServiceTracker t : trackers.values())

@@ -87,19 +87,20 @@ public class RequiredCapability implements IRequiredCapability, IMemberProvider 
 		this(namespace, name, range, filter, optional, multiple, true);
 	}
 
-	public RequiredCapability(IMatchExpression<IInstallableUnit> requirement, IMatchExpression<IInstallableUnit> filter, int min, int max, boolean greedy) {
+	public RequiredCapability(IMatchExpression<IInstallableUnit> requirement, IMatchExpression<IInstallableUnit> filter, int min, int max, boolean greedy, String description) {
 		this.matchExpression = requirement;
 		this.filter = filter;
 		this.min = min;
 		this.max = max;
 		this.greedy = greedy;
+		this.description = description;
 	}
 
 	public RequiredCapability(String namespace, String name, VersionRange range, String filter, boolean optional, boolean multiple, boolean greedy) {
-		this(namespace, name, range, filter == null ? (IMatchExpression<IInstallableUnit>) null : InstallableUnit.parseFilter(filter), optional ? 0 : 1, multiple ? 1 : Integer.MAX_VALUE, greedy);
+		this(namespace, name, range, filter == null ? (IMatchExpression<IInstallableUnit>) null : InstallableUnit.parseFilter(filter), optional ? 0 : 1, multiple ? Integer.MAX_VALUE : 1, greedy, null);
 	}
 
-	public RequiredCapability(String namespace, String name, VersionRange range, IMatchExpression<IInstallableUnit> filter, int min, int max, boolean greedy) {
+	public RequiredCapability(String namespace, String name, VersionRange range, IMatchExpression<IInstallableUnit> filter, int min, int max, boolean greedy, String description) {
 		Assert.isNotNull(namespace);
 		Assert.isNotNull(name);
 		IExpressionFactory factory = ExpressionUtil.getFactory();
@@ -125,6 +126,7 @@ public class RequiredCapability implements IRequiredCapability, IMemberProvider 
 		this.max = max;
 		this.greedy = greedy;
 		this.filter = filter;
+		this.description = description;
 	}
 
 	public boolean equals(Object obj) {
@@ -176,7 +178,8 @@ public class RequiredCapability implements IRequiredCapability, IMemberProvider 
 
 	public String toString() {
 		StringBuffer result = new StringBuffer();
-
+		if (matchExpression.getParameters().length == 0)
+			return matchExpression.toString();
 		if (IInstallableUnit.NAMESPACE_IU_ID.equals(getNamespace())) {
 			//print nothing for an IU id dependency because this is the default (most common) case
 			result.append(""); //$NON-NLS-1$

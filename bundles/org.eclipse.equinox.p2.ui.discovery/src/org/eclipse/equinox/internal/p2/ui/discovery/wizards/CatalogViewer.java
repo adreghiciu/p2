@@ -16,11 +16,18 @@ import java.util.List;
 import java.util.regex.Pattern;
 import org.eclipse.core.runtime.*;
 import org.eclipse.equinox.internal.p2.discovery.Catalog;
+import org.eclipse.equinox.internal.p2.discovery.compatibility.SiteVerifier;
 import org.eclipse.equinox.internal.p2.discovery.model.*;
 import org.eclipse.equinox.internal.p2.discovery.util.CatalogCategoryComparator;
 import org.eclipse.equinox.internal.p2.discovery.util.CatalogItemComparator;
+import org.eclipse.equinox.internal.p2.ui.ProvUI;
 import org.eclipse.equinox.internal.p2.ui.discovery.DiscoveryUi;
 import org.eclipse.equinox.internal.p2.ui.discovery.util.*;
+import org.eclipse.equinox.p2.engine.IProfile;
+import org.eclipse.equinox.p2.metadata.IInstallableUnit;
+import org.eclipse.equinox.p2.query.IQueryResult;
+import org.eclipse.equinox.p2.query.QueryUtil;
+import org.eclipse.equinox.p2.ui.ProvisioningUI;
 import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.operation.IRunnableContext;
 import org.eclipse.jface.operation.IRunnableWithProgress;
@@ -228,34 +235,31 @@ public class CatalogViewer extends FilteredViewer {
 		selectionProvider.addSelectionChangedListener(listener);
 	}
 
-	protected void catalogUpdated(boolean wasCancelled) {
-		if (catalog != null && !wasCancelled) {
-			int categoryWithConnectorCount = 0;
-			for (CatalogCategory category : catalog.getCategories()) {
-				categoryWithConnectorCount += category.getItems().size();
-			}
-			if (categoryWithConnectorCount == 0) {
-				// nothing was discovered: notify the user
-				MessageDialog.openWarning(getShell(), Messages.ConnectorDiscoveryWizardMainPage_noConnectorsFound, Messages.ConnectorDiscoveryWizardMainPage_noConnectorsFound_description);
-			}
+	protected void catalogUpdated(boolean wasCancelled, boolean wasError) {
+		if (catalog != null && !wasCancelled && !wasError) {
+			doCheckCatalog();
 		}
 		viewer.setInput(catalog);
 		selectionProvider.setSelection(StructuredSelection.EMPTY);
 	}
 
+	protected void doCheckCatalog() {
+		int categoryWithConnectorCount = 0;
+		for (CatalogCategory category : catalog.getCategories()) {
+			categoryWithConnectorCount += category.getItems().size();
+		}
+		if (categoryWithConnectorCount == 0) {
+			// nothing was discovered: notify the user
+			MessageDialog.openWarning(getShell(), Messages.ConnectorDiscoveryWizardMainPage_noConnectorsFound, Messages.ConnectorDiscoveryWizardMainPage_noConnectorsFound_description);
+		}
+	}
+
 	protected IStatus computeStatus(InvocationTargetException e, String message) {
 		Throwable cause = e.getCause();
-		IStatus statusCause;
-		if (cause instanceof CoreException) {
-			statusCause = ((CoreException) cause).getStatus();
-		} else {
-			statusCause = new Status(IStatus.ERROR, DiscoveryUi.ID_PLUGIN, cause.getMessage(), cause);
+		if (cause.getMessage() != null) {
+			message = NLS.bind(Messages.ConnectorDiscoveryWizardMainPage_message_with_cause, message, cause.getMessage());
 		}
-		if (statusCause.getMessage() != null) {
-			message = NLS.bind(Messages.ConnectorDiscoveryWizardMainPage_message_with_cause, message, statusCause.getMessage());
-		}
-		IStatus status = new MultiStatus(DiscoveryUi.ID_PLUGIN, 0, new IStatus[] {statusCause}, message, cause);
-		return status;
+		return new Status(IStatus.ERROR, DiscoveryUi.ID_PLUGIN, message, e);
 	}
 
 	protected Pattern createPattern(String filterText) {
@@ -265,12 +269,6 @@ public class CatalogViewer extends FilteredViewer {
 		String regex = filterText;
 		regex.replace("\\", "\\\\").replace("?", ".").replace("*", ".*?"); //$NON-NLS-1$//$NON-NLS-2$ //$NON-NLS-3$ //$NON-NLS-4$ //$NON-NLS-5$ //$NON-NLS-6$
 		return Pattern.compile(regex, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-	}
-
-	public void dispose() {
-		if (catalog != null) {
-			catalog.dispose();
-		}
 	}
 
 	@Override
@@ -393,6 +391,8 @@ public class CatalogViewer extends FilteredViewer {
 		viewer.getControl().addDisposeListener(new DisposeListener() {
 			public void widgetDisposed(DisposeEvent e) {
 				resources.dispose();
+				if (catalog != null)
+					catalog.dispose();
 			}
 		});
 		viewer.addFilter(new Filter());
@@ -443,16 +443,14 @@ public class CatalogViewer extends FilteredViewer {
 		return configuration;
 	}
 
-	protected Set<String> getInstalledFeatures(IProgressMonitor monitor) throws InterruptedException {
+	protected Set<String> getInstalledFeatures(IProgressMonitor monitor) {
 		Set<String> features = new HashSet<String>();
-		IBundleGroupProvider[] bundleGroupProviders = Platform.getBundleGroupProviders();
-		for (IBundleGroupProvider provider : bundleGroupProviders) {
-			if (monitor.isCanceled()) {
-				throw new InterruptedException();
-			}
-			IBundleGroup[] bundleGroups = provider.getBundleGroups();
-			for (IBundleGroup group : bundleGroups) {
-				features.add(group.getIdentifier());
+		IProfile profile = ProvUI.getProfileRegistry(ProvisioningUI.getDefaultUI().getSession()).getProfile(ProvisioningUI.getDefaultUI().getProfileId());
+		if (profile != null) {
+			IQueryResult<IInstallableUnit> result = profile.available(QueryUtil.createIUGroupQuery(), monitor);
+			for (Iterator<IInstallableUnit> it = result.iterator(); it.hasNext();) {
+				IInstallableUnit unit = it.next();
+				features.add(unit.getId());
 			}
 		}
 		return features;
@@ -559,6 +557,7 @@ public class CatalogViewer extends FilteredViewer {
 
 	public void updateCatalog() {
 		boolean wasCancelled = false;
+		boolean wasError = false;
 		try {
 			final IStatus[] result = new IStatus[1];
 			context.run(true, true, new IRunnableWithProgress() {
@@ -578,38 +577,45 @@ public class CatalogViewer extends FilteredViewer {
 
 			if (result[0] != null && !result[0].isOK()) {
 				StatusManager.getManager().handle(result[0], StatusManager.SHOW | StatusManager.BLOCK | StatusManager.LOG);
+				wasError = true;
 			}
 		} catch (InvocationTargetException e) {
 			IStatus status = computeStatus(e, Messages.ConnectorDiscoveryWizardMainPage_unexpectedException);
 			StatusManager.getManager().handle(status, StatusManager.SHOW | StatusManager.BLOCK | StatusManager.LOG);
+			wasError = true;
 		} catch (InterruptedException e) {
 			// cancelled by user so nothing to do here.
 			wasCancelled = true;
 		}
 		if (catalog != null) {
-			catalogUpdated(wasCancelled);
-			if (configuration.isVerifyUpdateSiteAvailability() && !catalog.getItems().isEmpty()) {
-				try {
-					context.run(true, true, new IRunnableWithProgress() {
-						public void run(IProgressMonitor monitor) {
-							//discovery.verifySiteAvailability(monitor);
-						}
-					});
-				} catch (InvocationTargetException e) {
-					IStatus status = computeStatus(e, Messages.ConnectorDiscoveryWizardMainPage_unexpectedException);
-					StatusManager.getManager().handle(status, StatusManager.SHOW | StatusManager.BLOCK | StatusManager.LOG);
-				} catch (InterruptedException e) {
-					// cancelled by user so nothing to do here.
-					wasCancelled = true;
-				}
-			}
+			catalogUpdated(wasCancelled, wasError);
+			verifyUpdateSiteAvailability();
 		}
 		// help UI tests
 		viewer.setData("discoveryComplete", "true"); //$NON-NLS-1$//$NON-NLS-2$
+	}
+
+	protected void verifyUpdateSiteAvailability() {
+		if (configuration.isVerifyUpdateSiteAvailability() && !catalog.getItems().isEmpty()) {
+			try {
+				context.run(true, true, new IRunnableWithProgress() {
+					public void run(IProgressMonitor monitor) {
+						SiteVerifier verifier = new SiteVerifier(catalog);
+						verifier.verifySiteAvailability(monitor);
+					}
+				});
+			} catch (InvocationTargetException e) {
+				IStatus status = computeStatus(e, Messages.ConnectorDiscoveryWizardMainPage_unexpectedException);
+				StatusManager.getManager().handle(status, StatusManager.SHOW | StatusManager.BLOCK | StatusManager.LOG);
+			} catch (InterruptedException e) {
+				// cancelled by user so nothing to do here.
+			}
+		}
 	}
 
 	private void updateState() {
 		setComplete(!checkedItems.isEmpty());
 		selectionProvider.setSelection(new StructuredSelection(getCheckedItems()));
 	}
+
 }

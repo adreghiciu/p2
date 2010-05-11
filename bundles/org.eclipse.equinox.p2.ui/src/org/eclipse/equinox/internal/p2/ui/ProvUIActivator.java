@@ -11,15 +11,14 @@
 package org.eclipse.equinox.internal.p2.ui;
 
 import java.net.URL;
-import org.eclipse.core.runtime.FileLocator;
-import org.eclipse.core.runtime.Path;
+import org.eclipse.core.runtime.*;
+import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.equinox.internal.p2.core.helpers.ServiceHelper;
 import org.eclipse.equinox.internal.provisional.p2.core.eventbus.IProvisioningEventBus;
 import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.engine.IProfileRegistry;
 import org.eclipse.equinox.p2.operations.ProvisioningSession;
-import org.eclipse.equinox.p2.ui.Policy;
-import org.eclipse.equinox.p2.ui.ProvisioningUI;
+import org.eclipse.equinox.p2.ui.*;
 import org.eclipse.jface.resource.ImageDescriptor;
 import org.eclipse.jface.resource.ImageRegistry;
 import org.eclipse.ui.plugin.AbstractUIPlugin;
@@ -85,23 +84,16 @@ public class ProvUIActivator extends AbstractUIPlugin {
 		ProvUIActivator.context = bundleContext;
 		packageAdminRef = bundleContext.getServiceReference(PackageAdmin.class.getName());
 		packageAdmin = (PackageAdmin) bundleContext.getService(packageAdminRef);
-
-		initializeProvisioningUI();
-	}
-
-	private void initializeProvisioningUI() {
-		IProvisioningAgent agent = (IProvisioningAgent) ServiceHelper.getService(getContext(), IProvisioningAgent.SERVICE_NAME);
-		session = new ProvisioningSession(agent);
-
-		Policy policy = (Policy) ServiceHelper.getService(ProvUIActivator.getContext(), Policy.class.getName());
-		if (policy == null)
-			policy = new Policy();
-
-		ui = new ProvisioningUI(session, IProfileRegistry.SELF, policy);
 	}
 
 	public void stop(BundleContext bundleContext) throws Exception {
 		try {
+			// cancel any repository load jobs started in the UI
+			Job.getJobManager().cancel(LoadMetadataRepositoryJob.LOAD_FAMILY);
+			// See https://bugs.eclipse.org/bugs/show_bug.cgi?id=305163
+			// join the jobs so that this bundle does not stop until the jobs are
+			// actually cancelled.  
+			Job.getJobManager().join(LoadMetadataRepositoryJob.LOAD_FAMILY, new NullProgressMonitor());
 			plugin = null;
 			ProvUIActivator.context = null;
 			ui = null;
@@ -146,6 +138,14 @@ public class ProvUIActivator extends AbstractUIPlugin {
 	}
 
 	public ProvisioningUI getProvisioningUI() {
+		if (ui == null) {
+			IProvisioningAgent agent = (IProvisioningAgent) ServiceHelper.getService(getContext(), IProvisioningAgent.SERVICE_NAME);
+			session = new ProvisioningSession(agent);
+			Policy policy = (Policy) ServiceHelper.getService(ProvUIActivator.getContext(), Policy.class.getName());
+			if (policy == null)
+				policy = new Policy();
+			ui = new ProvisioningUI(session, IProfileRegistry.SELF, policy);
+		}
 		return ui;
 	}
 

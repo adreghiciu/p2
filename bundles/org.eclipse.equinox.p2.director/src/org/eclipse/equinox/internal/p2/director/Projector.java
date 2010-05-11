@@ -19,14 +19,14 @@ import org.eclipse.core.runtime.*;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.equinox.internal.p2.core.helpers.CollectionUtils;
 import org.eclipse.equinox.internal.p2.core.helpers.Tracing;
+import org.eclipse.equinox.internal.p2.director.Explanation.NotInstallableRoot;
 import org.eclipse.equinox.internal.p2.metadata.IRequiredCapability;
 import org.eclipse.equinox.internal.p2.metadata.InstallableUnit;
 import org.eclipse.equinox.p2.metadata.*;
 import org.eclipse.equinox.p2.metadata.expression.IMatchExpression;
 import org.eclipse.equinox.p2.query.*;
 import org.eclipse.osgi.util.NLS;
-import org.sat4j.pb.IPBSolver;
-import org.sat4j.pb.SolverFactory;
+import org.sat4j.pb.*;
 import org.sat4j.pb.tools.DependencyHelper;
 import org.sat4j.pb.tools.WeightedObject;
 import org.sat4j.specs.*;
@@ -64,9 +64,25 @@ public class Projector {
 
 	private int numberOfInstalledIUs;
 
+	//Non greedy things
+	private Set<IInstallableUnit> nonGreedyIUs; //All the IUs that would satisfy non greedy dependencies
+	private Map<IInstallableUnit, AbstractVariable> nonGreedyVariables = new HashMap<IInstallableUnit, AbstractVariable>();
+	private Map<AbstractVariable, List<Object>> nonGreedyProvider = new HashMap<AbstractVariable, List<Object>>(); //Keeps track of all the "object" that provide an IU that is non greedly requested  
+
 	static class AbstractVariable {
+		//		private String name;
+
+		public AbstractVariable(String name) {
+			//						this.name = name;
+		}
+
+		public AbstractVariable() {
+			// TODO Auto-generated constructor stub
+		}
+
 		public String toString() {
 			return "AbstractVariable: " + hashCode(); //$NON-NLS-1$
+			//			return name == null ? "AbstractVariable: " + hashCode() : name; //$NON-NLS-1$
 		}
 	}
 
@@ -127,7 +143,7 @@ public class Projector {
 
 	}
 
-	public Projector(IQueryable<IInstallableUnit> q, Map<String, String> context, boolean considerMetaRequirements) {
+	public Projector(IQueryable<IInstallableUnit> q, Map<String, String> context, Set<IInstallableUnit> nonGreedyIUs, boolean considerMetaRequirements) {
 		picker = q;
 		noopVariables = new HashMap<IInstallableUnit, AbstractVariable>();
 		slice = new HashMap<String, Map<Version, IInstallableUnit>>();
@@ -135,6 +151,7 @@ public class Projector {
 		abstractVariables = new ArrayList<AbstractVariable>();
 		result = new MultiStatus(DirectorActivator.PI_DIRECTOR, IStatus.OK, Messages.Planner_Problems_resolving_plan, null);
 		assumptions = new ArrayList<Object>();
+		this.nonGreedyIUs = nonGreedyIUs;
 		this.considerMetaRequirements = considerMetaRequirements;
 	}
 
@@ -142,6 +159,7 @@ public class Projector {
 		return !lastState.query(QueryUtil.createIUQuery(iu), null).isEmpty();
 	}
 
+	@SuppressWarnings("unchecked")
 	public void encode(IInstallableUnit entryPointIU, IInstallableUnit[] alreadyExistingRoots, IQueryable<IInstallableUnit> installedIUs, Collection<IInstallableUnit> newRoots, IProgressMonitor monitor) {
 		alreadyInstalledIUs = Arrays.asList(alreadyExistingRoots);
 		numberOfInstalledIUs = sizeOf(installedIUs);
@@ -155,7 +173,7 @@ public class Projector {
 			}
 			IPBSolver solver;
 			if (DEBUG_ENCODING) {
-				solver = SolverFactory.newOPBStringSolver();
+				solver = new UserFriendlyPBStringSolver<Object>();
 			} else {
 				solver = SolverFactory.newEclipseP2();
 			}
@@ -163,6 +181,7 @@ public class Projector {
 			IQueryResult<IInstallableUnit> queryResult = picker.query(QueryUtil.createIUAnyQuery(), null);
 			if (DEBUG_ENCODING) {
 				dependencyHelper = new DependencyHelper<Object, Explanation>(solver, false);
+				((UserFriendlyPBStringSolver<Object>) solver).setMapping(dependencyHelper.getMappingToDomain());
 			} else {
 				dependencyHelper = new DependencyHelper<Object, Explanation>(solver);
 			}
@@ -187,6 +206,8 @@ public class Projector {
 
 			createMustHave(entryPointIU, alreadyExistingRoots);
 
+			createConstraintsForNonGreedy();
+
 			createOptimizationFunction(entryPointIU, newRoots);
 			if (DEBUG) {
 				long stop = System.currentTimeMillis();
@@ -200,6 +221,19 @@ public class Projector {
 		} catch (ContradictionException e) {
 			result.add(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, Messages.Planner_Unsatisfiable_problem));
 		}
+	}
+
+	private void createConstraintsForNonGreedy() throws ContradictionException {
+		for (IInstallableUnit iu : nonGreedyIUs) {
+			AbstractVariable var = getNonGreedyVariable(iu);
+			List<Object> providers = nonGreedyProvider.get(var);
+			if (providers == null || providers.size() == 0) {
+				dependencyHelper.setFalse(var, new Explanation.MissingGreedyIU(iu));
+			} else {
+				createImplication(var, providers, Explanation.OPTIONAL_REQUIREMENT);//FIXME
+			}
+		}
+
 	}
 
 	/**
@@ -261,7 +295,7 @@ public class Projector {
 				maxWeight = weight;
 		}
 
-		// no need to add one here, since maxWeight is strickly greater than the
+		// no need to add one here, since maxWeight is strictly greater than the
 		// maximal weight used so far.
 		maxWeight = maxWeight.multiply(POWER);
 
@@ -278,7 +312,7 @@ public class Projector {
 		List<IInstallableUnit> requestedPatches = new ArrayList<IInstallableUnit>();
 		Collection<IRequirement> reqs = metaIu.getRequirements();
 		for (IRequirement req : reqs) {
-			if (req.getMin() > 0)
+			if (req.getMin() > 0 || !req.isGreedy())
 				continue;
 			IQueryResult<IInstallableUnit> matches = picker.query(QueryUtil.createMatchQuery(req.getMatches()), null);
 			for (Iterator<IInstallableUnit> iterator = matches.iterator(); iterator.hasNext();) {
@@ -335,7 +369,7 @@ public class Projector {
 		if (DEBUG) {
 			Tracing.debug(iu + "=0"); //$NON-NLS-1$
 		}
-		dependencyHelper.setFalse(iu, new Explanation.MissingIU(iu, req));
+		dependencyHelper.setFalse(iu, new Explanation.MissingIU(iu, req, iu == this.entryPoint));
 	}
 
 	// Check whether the requirement is applicable
@@ -370,6 +404,19 @@ public class Projector {
 		createNegationImplication(iu, matches, explanation);
 	}
 
+	private void determinePotentialHostsForFragment(IInstallableUnit iu) {
+		// determine matching hosts only for fragments
+		if (!(iu instanceof IInstallableUnitFragment))
+			return;
+
+		IInstallableUnitFragment fragment = (IInstallableUnitFragment) iu;
+		// for each host requirement, find matches and remember them 
+		for (IRequirement req : fragment.getHost()) {
+			List<IInstallableUnit> matches = getApplicableMatches(req);
+			rememberHostMatches((IInstallableUnitFragment) iu, matches);
+		}
+	}
+
 	private void expandRequirement(IRequirement req, IInstallableUnit iu, List<AbstractVariable> optionalAbstractRequirements, boolean isRootIu) throws ContradictionException {
 		if (req.getMax() == 0) {
 			expandNegatedRequirement(req, iu, optionalAbstractRequirements, isRootIu);
@@ -378,30 +425,79 @@ public class Projector {
 		if (!isApplicable(req))
 			return;
 		List<IInstallableUnit> matches = getApplicableMatches(req);
+		determinePotentialHostsForFragment(iu);
 		if (req.getMin() > 0) {
 			if (matches.isEmpty()) {
-				missingRequirement(iu, req);
+				if (iu == entryPoint && emptyBecauseFiltered) {
+					dependencyHelper.setFalse(iu, new NotInstallableRoot(req));
+				} else {
+					missingRequirement(iu, req);
+				}
 			} else {
-				IInstallableUnit reqIu = matches.get(0);
-				Explanation explanation;
-				if (isRootIu) {
-					if (alreadyInstalledIUs.contains(reqIu)) {
-						explanation = new Explanation.IUInstalled(reqIu);
+				if (req.isGreedy()) {
+					IInstallableUnit reqIu = matches.get(0);
+					Explanation explanation;
+					if (isRootIu) {
+						if (alreadyInstalledIUs.contains(reqIu)) {
+							explanation = new Explanation.IUInstalled(reqIu);
+						} else {
+							explanation = new Explanation.IUToInstall(reqIu);
+						}
 					} else {
-						explanation = new Explanation.IUToInstall(reqIu);
+						explanation = new Explanation.HardRequirement(iu, req);
+					}
+					createImplication(iu, matches, explanation);
+					IInstallableUnit current;
+					for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+						current = it.next();
+						if (nonGreedyIUs.contains(current)) {
+							addNonGreedyProvider(getNonGreedyVariable(current), iu);
+						}
 					}
 				} else {
-					explanation = new Explanation.HardRequirement(iu, req);
+					List<Object> newConstraint = new ArrayList<Object>(matches.size());
+					IInstallableUnit current;
+					for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+						current = it.next();
+						newConstraint.add(getNonGreedyVariable(current));
+					}
+					createImplication(new Object[] {iu}, newConstraint, new Explanation.HardRequirement(iu, req)); // FIXME
 				}
-				createImplication(iu, matches, explanation);
 			}
 		} else {
 			if (!matches.isEmpty()) {
-				AbstractVariable abs = getAbstractVariable();
-				createImplication(new Object[] {abs, iu}, matches, Explanation.OPTIONAL_REQUIREMENT);
+				IInstallableUnit current;
+				AbstractVariable abs;
+				if (req.isGreedy()) {
+					abs = getAbstractVariable(req);
+					createImplication(new Object[] {abs, iu}, matches, Explanation.OPTIONAL_REQUIREMENT);
+					for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+						current = it.next();
+						if (nonGreedyIUs.contains(current)) {
+							addNonGreedyProvider(getNonGreedyVariable(current), abs);
+						}
+					}
+				} else {
+					abs = getAbstractVariable(req, false);
+					List<Object> newConstraint = new ArrayList<Object>();
+					for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+						current = it.next();
+						newConstraint.add(getNonGreedyVariable(current));
+					}
+					createImplication(new Object[] {abs, iu}, newConstraint, Explanation.OPTIONAL_REQUIREMENT);
+				}
 				optionalAbstractRequirements.add(abs);
 			}
 		}
+	}
+
+	private void addNonGreedyProvider(AbstractVariable nonGreedyVariable, Object o) {
+		List<Object> providers = nonGreedyProvider.get(nonGreedyVariable);
+		if (providers == null) {
+			providers = new ArrayList<Object>();
+			nonGreedyProvider.put(nonGreedyVariable, providers);
+		}
+		providers.add(o);
 	}
 
 	private void expandRequirements(Collection<IRequirement> reqs, IInstallableUnit iu, boolean isRootIu) throws ContradictionException {
@@ -459,18 +555,21 @@ public class Projector {
 	}
 
 	private Collection<IRequirement> getRequiredCapabilities(IInstallableUnit iu) {
-		Collection<IRequirement> rqs = iu.getRequirements();
-		if (!considerMetaRequirements)
-			return rqs;
+		boolean isFragment = iu instanceof IInstallableUnitFragment;
+		//Short-circuit for the case of an IInstallableUnit 
+		if ((!isFragment) && iu.getMetaRequirements().size() == 0)
+			return iu.getRequirements();
 
-		Collection<IRequirement> metaRqs = iu.getMetaRequirements();
-		if (metaRqs.isEmpty())
-			return rqs;
+		ArrayList<IRequirement> aggregatedRequirements = new ArrayList<IRequirement>(iu.getRequirements().size() + iu.getMetaRequirements().size() + (isFragment ? ((IInstallableUnitFragment) iu).getHost().size() : 0));
+		aggregatedRequirements.addAll(iu.getRequirements());
 
-		ArrayList<IRequirement> aggregatedRqs = new ArrayList<IRequirement>(rqs.size() + metaRqs.size());
-		aggregatedRqs.addAll(rqs);
-		aggregatedRqs.addAll(metaRqs);
-		return aggregatedRqs;
+		if (iu instanceof IInstallableUnitFragment) {
+			aggregatedRequirements.addAll(((IInstallableUnitFragment) iu).getHost());
+		}
+
+		if (considerMetaRequirements)
+			aggregatedRequirements.addAll(iu.getMetaRequirements());
+		return aggregatedRequirements;
 	}
 
 	static final class Pending {
@@ -499,6 +598,10 @@ public class Projector {
 			for (int i = 0; i < reqs.length; i++) {
 				//The requirement is unchanged
 				if (reqs[i][0] == reqs[i][1]) {
+					if (reqs[i][0].getMax() == 0) {
+						expandNegatedRequirement(reqs[i][0], iu, optionalAbstractRequirements, isRootIu);
+						return;
+					}
 					if (!isApplicable(reqs[i][0]))
 						continue;
 
@@ -516,27 +619,62 @@ public class Projector {
 				if (isApplicable(reqs[i][1])) {
 					IRequirement req = reqs[i][1];
 					List<IInstallableUnit> matches = getApplicableMatches(req);
+					determinePotentialHostsForFragment(iu);
 					if (req.getMin() > 0) {
 						if (matches.isEmpty()) {
 							missingRequirement(patch, req);
 						} else {
-							IInstallableUnit reqIu = matches.get(0);
-							Explanation explanation;
-							if (isRootIu) {
-								if (alreadyInstalledIUs.contains(reqIu)) {
-									explanation = new Explanation.IUInstalled(reqIu);
+							IInstallableUnit current;
+							if (req.isGreedy()) {
+								IInstallableUnit reqIu = matches.get(0);
+								Explanation explanation;
+								if (isRootIu) {
+									if (alreadyInstalledIUs.contains(reqIu)) {
+										explanation = new Explanation.IUInstalled(reqIu);
+									} else {
+										explanation = new Explanation.IUToInstall(reqIu);
+									}
 								} else {
-									explanation = new Explanation.IUToInstall(reqIu);
+									explanation = new Explanation.PatchedHardRequirement(iu, req, patch);
+								}
+								createImplication(new Object[] {patch, iu}, matches, explanation);
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									if (nonGreedyIUs.contains(current)) {
+										addNonGreedyProvider(getNonGreedyVariable(current), iu);
+									}
 								}
 							} else {
-								explanation = new Explanation.PatchedHardRequirement(iu, req, patch);
+								List<Object> newConstraint = new ArrayList<Object>();
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									newConstraint.add(getNonGreedyVariable(current));
+								}
+								createImplication(new Object[] {iu}, newConstraint, new Explanation.HardRequirement(iu, req)); // FIXME
 							}
-							createImplication(new Object[] {patch, iu}, matches, explanation);
 						}
 					} else {
 						if (!matches.isEmpty()) {
-							AbstractVariable abs = getAbstractVariable();
-							createImplication(new Object[] {patch, abs, iu}, matches, Explanation.OPTIONAL_REQUIREMENT);
+							IInstallableUnit current;
+							AbstractVariable abs;
+							if (req.isGreedy()) {
+								abs = getAbstractVariable(req);
+								createImplication(new Object[] {patch, abs, iu}, matches, Explanation.OPTIONAL_REQUIREMENT);
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									if (nonGreedyIUs.contains(current)) {
+										addNonGreedyProvider(getNonGreedyVariable(current), abs);
+									}
+								}
+							} else {
+								abs = getAbstractVariable(req, false);
+								List<Object> newConstraint = new ArrayList<Object>(matches.size());
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									newConstraint.add(getNonGreedyVariable(current));
+								}
+								createImplication(new Object[] {patch, abs, iu}, newConstraint, Explanation.OPTIONAL_REQUIREMENT);
+							}
 							optionalAbstractRequirements.add(abs);
 						}
 					}
@@ -555,46 +693,84 @@ public class Projector {
 					}
 
 					List<IInstallableUnit> matches = getApplicableMatches(req);
-					if (isHostRequirement(iu, req)) {
-						rememberHostMatches((IInstallableUnitFragment) iu, matches);
-					}
+					determinePotentialHostsForFragment(iu);
 					if (req.getMin() > 0) {
 						if (matches.isEmpty()) {
 							dependencyHelper.implication(new Object[] {iu}).implies(patch).named(new Explanation.HardRequirement(iu, null));
 						} else {
+							// manage non greedy IUs
+							IInstallableUnit current;
+							List<Object> nonGreedys = new ArrayList<Object>();
+							for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+								current = it.next();
+								if (nonGreedyIUs.contains(current)) {
+									nonGreedys.add(getNonGreedyVariable(current));
+								}
+							}
 							matches.add(patch);
-							IInstallableUnit reqIu = matches.get(0);///(IInstallableUnit) picker.query(new CapabilityQuery(req), new Collector(), null).iterator().next();
-
-							Explanation explanation;
-							if (isRootIu) {
-								if (alreadyInstalledIUs.contains(reqIu)) {
-									explanation = new Explanation.IUInstalled(reqIu);
+							if (req.isGreedy()) {
+								IInstallableUnit reqIu = matches.get(0);///(IInstallableUnit) picker.query(new CapabilityQuery(req), new Collector(), null).iterator().next();
+								Explanation explanation;
+								if (isRootIu) {
+									if (alreadyInstalledIUs.contains(reqIu)) {
+										explanation = new Explanation.IUInstalled(reqIu);
+									} else {
+										explanation = new Explanation.IUToInstall(reqIu);
+									}
 								} else {
-									explanation = new Explanation.IUToInstall(reqIu);
+									explanation = new Explanation.HardRequirement(iu, req);
+								}
+
+								// Fix: make sure we collect all patches that will impact this IU-req, not just one
+								pending = new Pending();
+								pending.left = iu;
+								pending.explanation = explanation;
+								pending.matches = matches;
+								nonPatchedRequirements.put(req, pending);
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									if (nonGreedyIUs.contains(current)) {
+										addNonGreedyProvider(getNonGreedyVariable(current), iu);
+									}
 								}
 							} else {
-								explanation = new Explanation.HardRequirement(iu, req);
+								List<Object> newConstraint = new ArrayList<Object>(matches.size());
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									newConstraint.add(getNonGreedyVariable(current));
+								}
+								createImplication(new Object[] {iu}, newConstraint, new Explanation.HardRequirement(iu, req)); // FIXME
 							}
-
-							// Fix: make sure we collect all patches that will impact this IU-req, not just one
-							pending = new Pending();
-							pending.left = iu;
-							pending.explanation = explanation;
-							pending.matches = matches;
-							nonPatchedRequirements.put(req, pending);
 						}
 					} else {
 						if (!matches.isEmpty()) {
-							AbstractVariable abs = getAbstractVariable();
+							IInstallableUnit current;
+							AbstractVariable abs;
 							matches.add(patch);
-
-							// Fix: make sure we collect all patches that will impact this IU-req, not just one
-							pending = new Pending();
-							pending.left = new Object[] {abs, iu};
-							pending.explanation = Explanation.OPTIONAL_REQUIREMENT;
-							pending.matches = matches;
-							nonPatchedRequirements.put(req, pending);
-
+							if (req.isGreedy()) {
+								abs = getAbstractVariable(req);
+								// Fix: make sure we collect all patches that will impact this IU-req, not just one
+								pending = new Pending();
+								pending.left = new Object[] {abs, iu};
+								pending.explanation = Explanation.OPTIONAL_REQUIREMENT;
+								pending.matches = matches;
+								nonPatchedRequirements.put(req, pending);
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									if (nonGreedyIUs.contains(current)) {
+										addNonGreedyProvider(getNonGreedyVariable(current), abs);
+									}
+								}
+							} else {
+								abs = getAbstractVariable(req, false);
+								List<Object> newConstraint = new ArrayList<Object>(matches.size());
+								for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+									current = it.next();
+									newConstraint.add(getNonGreedyVariable(current));
+								}
+								newConstraint.add(patch);
+								createImplication(new Object[] {abs, iu}, newConstraint, new Explanation.HardRequirement(iu, req)); // FIXME
+							}
 							optionalAbstractRequirements.add(abs);
 						}
 					}
@@ -620,9 +796,7 @@ public class Projector {
 			}
 			IRequirement req = entry.getKey();
 			List<IInstallableUnit> matches = getApplicableMatches(req);
-			if (isHostRequirement(iu, req)) {
-				rememberHostMatches((IInstallableUnitFragment) iu, matches);
-			}
+			determinePotentialHostsForFragment(iu);
 			if (req.getMin() > 0) {
 				if (matches.isEmpty()) {
 					if (requiredPatches.isEmpty()) {
@@ -631,27 +805,69 @@ public class Projector {
 						createImplication(iu, requiredPatches, new Explanation.HardRequirement(iu, req));
 					}
 				} else {
+					// manage non greedy IUs
+					IInstallableUnit current;
+					List<Object> nonGreedys = new ArrayList<Object>(matches.size());
+					for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+						current = it.next();
+						if (nonGreedyIUs.contains(current)) {
+							nonGreedys.add(getNonGreedyVariable(current));
+						}
+					}
 					if (!requiredPatches.isEmpty())
 						matches.addAll(requiredPatches);
-					IInstallableUnit reqIu = matches.get(0);//(IInstallableUnit) picker.query(new CapabilityQuery(req), new Collector(), null).iterator().next();
-					Explanation explanation;
-					if (isRootIu) {
-						if (alreadyInstalledIUs.contains(reqIu)) {
-							explanation = new Explanation.IUInstalled(reqIu);
+					if (req.isGreedy()) {
+						IInstallableUnit reqIu = matches.get(0);
+						Explanation explanation;
+						if (isRootIu) {
+							if (alreadyInstalledIUs.contains(reqIu)) {
+								explanation = new Explanation.IUInstalled(reqIu);
+							} else {
+								explanation = new Explanation.IUToInstall(reqIu);
+							}
 						} else {
-							explanation = new Explanation.IUToInstall(reqIu);
+							explanation = new Explanation.HardRequirement(iu, req);
+						}
+						createImplication(iu, matches, explanation);
+						for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+							current = it.next();
+							if (nonGreedyIUs.contains(current)) {
+								addNonGreedyProvider(getNonGreedyVariable(current), iu);
+							}
 						}
 					} else {
-						explanation = new Explanation.HardRequirement(iu, req);
+						List<Object> newConstraint = new ArrayList<Object>(matches.size());
+						for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+							current = it.next();
+							newConstraint.add(getNonGreedyVariable(current));
+						}
+						createImplication(new Object[] {iu}, newConstraint, new Explanation.HardRequirement(iu, req)); // FIXME
 					}
-					createImplication(iu, matches, explanation);
 				}
 			} else {
 				if (!matches.isEmpty()) {
+					IInstallableUnit current;
 					if (!requiredPatches.isEmpty())
 						matches.addAll(requiredPatches);
-					AbstractVariable abs = getAbstractVariable();
-					createImplication(new Object[] {abs, iu}, matches, Explanation.OPTIONAL_REQUIREMENT);
+					AbstractVariable abs;
+					if (req.isGreedy()) {
+						abs = getAbstractVariable(req);
+						createImplication(new Object[] {abs, iu}, matches, Explanation.OPTIONAL_REQUIREMENT);
+						for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+							current = it.next();
+							if (nonGreedyIUs.contains(current)) {
+								addNonGreedyProvider(getNonGreedyVariable(current), iu);
+							}
+						}
+					} else {
+						abs = getAbstractVariable(req, false);
+						List<Object> newConstraint = new ArrayList<Object>(matches.size());
+						for (Iterator<IInstallableUnit> it = matches.iterator(); it.hasNext();) {
+							current = it.next();
+							newConstraint.add(getNonGreedyVariable(current));
+						}
+						createImplication(new Object[] {abs, iu}, newConstraint, new Explanation.HardRequirement(iu, req)); // FIXME
+					}
 					optionalAbstractRequirements.add(abs);
 				}
 			}
@@ -674,6 +890,8 @@ public class Projector {
 		createNegation(iu, req);
 	}
 
+	private boolean emptyBecauseFiltered;
+
 	/**
 	 * @param req
 	 * @return a list of mandatory requirements if any, an empty list if req.isOptional().
@@ -687,6 +905,7 @@ public class Projector {
 				target.add(match);
 			}
 		}
+		emptyBecauseFiltered = !matches.isEmpty() && target.isEmpty();
 		return target;
 	}
 
@@ -834,17 +1053,32 @@ public class Projector {
 		dependencyHelper.atMost(1, (Object[]) vars).named(Explanation.OPTIONAL_REQUIREMENT);
 	}
 
-	private AbstractVariable getAbstractVariable() {
-		AbstractVariable abstractVariable = new AbstractVariable();
-		abstractVariables.add(abstractVariable);
+	private AbstractVariable getAbstractVariable(IRequirement req) {
+		return getAbstractVariable(req, true);
+	}
+
+	private AbstractVariable getAbstractVariable(IRequirement req, boolean appearInOptFunction) {
+		AbstractVariable abstractVariable = DEBUG_ENCODING ? new AbstractVariable("Abs_" + req.toString()) : new AbstractVariable(); //$NON-NLS-1$
+		if (appearInOptFunction) {
+			abstractVariables.add(abstractVariable);
+		}
 		return abstractVariable;
 	}
 
 	private AbstractVariable getNoOperationVariable(IInstallableUnit iu) {
 		AbstractVariable v = noopVariables.get(iu);
 		if (v == null) {
-			v = new AbstractVariable();
+			v = DEBUG_ENCODING ? new AbstractVariable("Noop_" + iu.toString()) : new AbstractVariable(); //$NON-NLS-1$
 			noopVariables.put(iu, v);
+		}
+		return v;
+	}
+
+	private AbstractVariable getNonGreedyVariable(IInstallableUnit iu) {
+		AbstractVariable v = nonGreedyVariables.get(iu);
+		if (v == null) {
+			v = DEBUG_ENCODING ? new AbstractVariable("NG_" + iu.toString()) : new AbstractVariable(); //$NON-NLS-1$
+			nonGreedyVariables.put(iu, v);
 		}
 		return v;
 	}
@@ -873,7 +1107,8 @@ public class Projector {
 					Tracing.debug("Unsatisfiable !"); //$NON-NLS-1$
 					Tracing.debug("Solver solution NOT found: " + (stop - start)); //$NON-NLS-1$
 				}
-				result.merge(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, Messages.Planner_Unsatisfiable_problem));
+				result = new MultiStatus(DirectorActivator.PI_DIRECTOR, SimplePlanner.UNSATISFIABLE, result.getChildren(), Messages.Planner_Unsatisfiable_problem, null);
+				result.merge(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, SimplePlanner.UNSATISFIABLE, Messages.Planner_Unsatisfiable_problem, null));
 			}
 		} catch (TimeoutException e) {
 			result.merge(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, Messages.Planner_Timeout));
@@ -969,16 +1204,4 @@ public class Projector {
 		}
 		existingMatches.retainAll(matches);
 	}
-
-	private boolean isHostRequirement(IInstallableUnit iu, IRequirement req) {
-		if (!(iu instanceof IInstallableUnitFragment))
-			return false;
-		IInstallableUnitFragment fragment = (IInstallableUnitFragment) iu;
-		for (IRequirement hostReqs : fragment.getHost()) {
-			if (req.equals(hostReqs))
-				return true;
-		}
-		return false;
-	}
-
 }

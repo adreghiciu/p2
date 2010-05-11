@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2008, 2009 IBM Corporation and others.
+ * Copyright (c) 2008, 2010 IBM Corporation and others.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Public License v1.0
  * which accompanies this distribution, and is available at
@@ -12,11 +12,18 @@ package org.eclipse.equinox.internal.p2.ui.sdk;
 
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
+import org.eclipse.core.runtime.*;
 import org.eclipse.core.runtime.jobs.*;
+import org.eclipse.equinox.p2.core.IProvisioningAgent;
+import org.eclipse.equinox.p2.engine.IProfile;
+import org.eclipse.equinox.p2.engine.IProfileRegistry;
 import org.eclipse.equinox.p2.ui.LoadMetadataRepositoryJob;
 import org.eclipse.equinox.p2.ui.ProvisioningUI;
+import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.swt.custom.BusyIndicator;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.ui.PlatformUI;
+import org.eclipse.ui.statushandlers.StatusManager;
 
 /**
  * PreloadingRepositoryHandler provides background loading of
@@ -37,7 +44,31 @@ abstract class PreloadingRepositoryHandler extends AbstractHandler {
 	 * Execute the command.
 	 */
 	public Object execute(ExecutionEvent event) {
-		doExecuteAndLoad();
+		// Look for a profile.  We may not immediately need it in the
+		// handler, but if we don't have one, whatever we are trying to do
+		// will ultimately fail in a more subtle/low-level way.  So determine
+		// up front if the system is configured properly.
+		String profileId = getProvisioningUI().getProfileId();
+		IProvisioningAgent agent = getProvisioningUI().getSession().getProvisioningAgent();
+		IProfile profile = null;
+		if (agent != null) {
+			IProfileRegistry registry = (IProfileRegistry) agent.getService(IProfileRegistry.SERVICE_NAME);
+			if (registry != null) {
+				profile = registry.getProfile(profileId);
+			}
+		}
+		if (profile == null) {
+			// Inform the user nicely
+			MessageDialog.openInformation(null, ProvSDKMessages.Handler_SDKUpdateUIMessageTitle, ProvSDKMessages.Handler_CannotLaunchUI);
+			// Log the detailed message
+			StatusManager.getManager().handle(ProvSDKUIActivator.getNoSelfProfileStatus());
+		} else {
+			BusyIndicator.showWhile(getShell().getDisplay(), new Runnable() {
+				public void run() {
+					doExecuteAndLoad();
+				}
+			});
+		}
 		return null;
 	}
 
@@ -45,7 +76,20 @@ abstract class PreloadingRepositoryHandler extends AbstractHandler {
 		if (preloadRepositories()) {
 			//cancel any load that is already running
 			Job.getJobManager().cancel(LoadMetadataRepositoryJob.LOAD_FAMILY);
-			final LoadMetadataRepositoryJob loadJob = new LoadMetadataRepositoryJob(getProvisioningUI());
+			final LoadMetadataRepositoryJob loadJob = new LoadMetadataRepositoryJob(getProvisioningUI()) {
+				public IStatus runModal(IProgressMonitor monitor) {
+					SubMonitor sub = SubMonitor.convert(monitor, getProgressTaskName(), 1000);
+					IStatus status = super.runModal(sub.newChild(500));
+					if (status.getSeverity() == IStatus.CANCEL)
+						return status;
+					try {
+						doPostLoadBackgroundWork(sub.newChild(500));
+					} catch (OperationCanceledException e) {
+						return Status.CANCEL_STATUS;
+					}
+					return status;
+				}
+			};
 			setLoadJobProperties(loadJob);
 			if (waitForPreload()) {
 				loadJob.addJobChangeListener(new JobChangeAdapter() {
@@ -66,18 +110,24 @@ abstract class PreloadingRepositoryHandler extends AbstractHandler {
 			} else {
 				loadJob.setSystem(true);
 				loadJob.setUser(false);
-				loadJob.setProperty(LoadMetadataRepositoryJob.WIZARD_CLIENT_SHOULD_SCHEDULE, Boolean.toString(true));
-				doExecute(loadJob);
+				loadJob.schedule();
+				doExecute(null);
 			}
 		} else {
 			doExecute(null);
 		}
 	}
 
+	protected abstract String getProgressTaskName();
+
 	protected abstract void doExecute(LoadMetadataRepositoryJob job);
 
 	protected boolean preloadRepositories() {
 		return true;
+	}
+
+	protected void doPostLoadBackgroundWork(IProgressMonitor monitor) throws OperationCanceledException {
+		// default is to do nothing more.
 	}
 
 	protected boolean waitForPreload() {
