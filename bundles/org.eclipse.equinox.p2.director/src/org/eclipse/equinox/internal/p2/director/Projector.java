@@ -535,25 +535,6 @@ public class Projector {
 		determinePotentialHostsForFragment(iu);
 	}
 
-	/**
-	 * Determines all potential hosts for a fragment.
-	 * A potential host is an IU that satisfies requirements specified for fragment.
-	 *  
-	 * @param iu an eventual fragment. It does nothing if IU is not a fragment or is null
-	 */
-	private void determinePotentialHostsForFragment(IInstallableUnit iu) {
-		// determine matching hosts only for fragments
-		if (!(iu instanceof IInstallableUnitFragment))
-			return;
-
-		IInstallableUnitFragment fragment = (IInstallableUnitFragment) iu;
-		// for each host requirement, find matches and remember them 
-		for (IRequirement req : fragment.getHost()) {
-			List<IInstallableUnit> matches = getApplicableMatches(req);
-			rememberHostMatches((IInstallableUnitFragment) iu, matches);
-		}
-	}
-
 	private Collection<IRequirement> getRequiredCapabilities(IInstallableUnit iu) {
 		boolean isFragment = iu instanceof IInstallableUnitFragment;
 		//Short-circuit for the case of an IInstallableUnit 
