@@ -1,5 +1,5 @@
 /*******************************************************************************
- *  Copyright (c) 2007, 2009 IBM Corporation and others.
+ *  Copyright (c) 2007, 2010 IBM Corporation and others.
  *  All rights reserved. This program and the accompanying materials
  *  are made available under the terms of the Eclipse Public License v1.0
  *  which accompanies this distribution, and is available at
@@ -14,10 +14,16 @@ import org.eclipse.equinox.p2.query.QueryUtil;
 
 import java.io.File;
 import java.lang.ref.SoftReference;
+<<<<<<< SurrogateProfileHandler.java
 import java.net.MalformedURLException;
 import java.net.URL;
+=======
+import java.net.*;
+import java.util.ArrayList;
+>>>>>>> 1.23
 import java.util.Iterator;
 import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.URIUtil;
 import org.eclipse.equinox.internal.p2.core.helpers.ServiceHelper;
 import org.eclipse.equinox.p2.core.IProvisioningAgent;
 import org.eclipse.equinox.p2.engine.IProfile;
@@ -50,7 +56,7 @@ public class SurrogateProfileHandler implements ISurrogateProfileHandler {
 
 	private static void addSharedProfileBaseIUs(final IProfile sharedProfile, final Profile userProfile) {
 		IQuery<IInstallableUnit> rootIUQuery = QueryUtil.createMatchQuery( //
-				"profileProperties[$0] == 'true' || touchpointType.id == $1",//$NON-NLS-1$
+				"profileProperties[$0] == 'true' || (touchpointType != null && touchpointType.id == $1)",//$NON-NLS-1$
 				IProfile.PROP_PROFILE_ROOT_IU, NATIVE_TOUCHPOINT_TYPE);
 		IQueryResult<IInstallableUnit> rootIUs = sharedProfile.query(rootIUQuery, null);
 		for (Iterator<IInstallableUnit> iterator = rootIUs.iterator(); iterator.hasNext();) {
@@ -119,9 +125,11 @@ public class SurrogateProfileHandler implements ISurrogateProfileHandler {
 			String installArea = EngineActivator.getContext().getProperty(OSGI_INSTALL_AREA);
 			try {
 				URL registryURL = new URL(installArea + P2_ENGINE_DIR + SimpleProfileRegistry.DEFAULT_STORAGE_DIR);
-				File sharedRegistryDirectory = new File(registryURL.getPath());
+				File sharedRegistryDirectory = URIUtil.toFile(URIUtil.toURI(registryURL));
 				profileRegistry = new SimpleProfileRegistry(agent, sharedRegistryDirectory, null, false);
 			} catch (MalformedURLException e) {
+				//this is not possible because we know the above URL is valid
+			} catch (URISyntaxException e) {
 				//this is not possible because we know the above URL is valid
 			}
 		}

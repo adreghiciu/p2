@@ -37,7 +37,13 @@ public class Messages extends NLS {
 	public static String Explanation_hardDependency;
 	public static String Explanation_patchedHardDependency;
 	public static String Explanation_missingRequired;
+<<<<<<< Messages.java
+=======
+	public static String Explanation_missingRootRequired;
+	public static String Explanation_missingNonGreedyRequired;
+>>>>>>> 1.26
 	public static String Explanation_missingRequiredFilter;
+	public static String Explanation_missingRootFilter;
 	public static String Explanation_optionalDependency;
 	public static String Explanation_rootMissing;
 	public static String Explanation_rootSingleton;

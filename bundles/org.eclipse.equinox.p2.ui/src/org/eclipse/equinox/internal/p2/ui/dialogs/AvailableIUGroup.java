@@ -23,6 +23,7 @@ import org.eclipse.equinox.internal.provisional.p2.repository.RepositoryEvent;
 import org.eclipse.equinox.p2.core.ProvisionException;
 import org.eclipse.equinox.p2.metadata.IInstallableUnit;
 import org.eclipse.equinox.p2.repository.IRepositoryManager;
+import org.eclipse.equinox.p2.ui.LoadMetadataRepositoryJob;
 import org.eclipse.equinox.p2.ui.ProvisioningUI;
 import org.eclipse.jface.viewers.*;
 import org.eclipse.osgi.util.NLS;
@@ -127,7 +128,7 @@ public class AvailableIUGroup extends StructuredIUGroup {
 
 	protected StructuredViewer createViewer(Composite parent) {
 		// Table of available IU's
-		filteredTree = new DelayedFilterCheckboxTree(parent, SWT.MULTI | SWT.FULL_SELECTION | SWT.H_SCROLL | SWT.V_SCROLL | SWT.BORDER, filter);
+		filteredTree = new DelayedFilterCheckboxTree(parent, SWT.MULTI | SWT.FULL_SELECTION | SWT.H_SCROLL | SWT.V_SCROLL | SWT.BORDER, filter, getPreFilterJobProvider());
 		final TreeViewer availableIUViewer = filteredTree.getViewer();
 
 		// If the user expanded or collapsed anything while we were loading a repo
@@ -167,7 +168,7 @@ public class AvailableIUGroup extends StructuredIUGroup {
 		// after content has been retrieved.
 		filteredTree.contentProviderSet(contentProvider);
 
-		final StructuredViewerProvisioningListener listener = new StructuredViewerProvisioningListener(availableIUViewer, ProvUIProvisioningListener.PROV_EVENT_METADATA_REPOSITORY) {
+		final StructuredViewerProvisioningListener listener = new StructuredViewerProvisioningListener(getClass().getName(), availableIUViewer, ProvUIProvisioningListener.PROV_EVENT_METADATA_REPOSITORY) {
 			protected void repositoryAdded(final RepositoryEvent event) {
 				makeRepositoryVisible(event.getRepositoryLocation());
 			}
@@ -439,9 +440,12 @@ public class AvailableIUGroup extends StructuredIUGroup {
 	 */
 	public void setChecked(Object[] selections) {
 		filteredTree.getCheckboxTreeViewer().setCheckedElements(selections);
-		// Relying on knowledge that DelayedFilterCheckbox doesn't care which element is in the listener
-		Object element = selections.length > 0 ? selections[0] : new Object();
-		filteredTree.getCheckboxTreeViewer().fireCheckStateChanged(element, true);
+		// TODO HACK ALERT!
+		// Since We don't have API for setAllChecked(boolean), clients have to use this method.
+		// We need to signal DelayedFilterCheckboxTree when everything needs to be deselected since
+		// we aren't firing an event for each item.
+		Object element = selections.length == 0 ? DelayedFilterCheckboxTree.ALL_ITEMS_HACK : selections[0];
+		filteredTree.getCheckboxTreeViewer().fireCheckStateChanged(element, selections.length > 0);
 	}
 
 	public void setRepositoryFilter(int filterFlag, URI repoLocation) {
@@ -472,5 +476,40 @@ public class AvailableIUGroup extends StructuredIUGroup {
 		}
 		updateAvailableViewState();
 		filteredTree.clearCheckStateCache();
+	}
+
+	private IPreFilterJobProvider getPreFilterJobProvider() {
+		return new IPreFilterJobProvider() {
+
+			public Job getPreFilterJob() {
+				switch (filterConstant) {
+					case AVAILABLE_ALL :
+						Job preFilterJob = new LoadMetadataRepositoryJob(getProvisioningUI());
+						preFilterJob.setProperty(LoadMetadataRepositoryJob.SUPPRESS_REPOSITORY_EVENTS, Boolean.toString(true));
+						return preFilterJob;
+					case AVAILABLE_NONE :
+					case AVAILABLE_LOCAL :
+						return null;
+					default :
+						if (repositoryFilter == null)
+							return null;
+						Job job = new Job("Repository Load Job") { //$NON-NLS-1$
+							@Override
+							protected IStatus run(IProgressMonitor monitor) {
+								try {
+									getProvisioningUI().loadMetadataRepository(repositoryFilter, false, monitor);
+									return Status.OK_STATUS;
+								} catch (ProvisionException e) {
+									return e.getStatus();
+								}
+							}
+
+						};
+						job.setPriority(Job.SHORT);
+						return job;
+				}
+			}
+
+		};
 	}
 }

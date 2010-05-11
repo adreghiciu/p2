@@ -38,9 +38,13 @@ public class ProvisioningContext {
 	private final List<IInstallableUnit> extraIUs = Collections.synchronizedList(new ArrayList<IInstallableUnit>());
 	private URI[] metadataRepositories; //metadata repositories to consult
 	private final Map<String, String> properties = new HashMap<String, String>();
+<<<<<<< ProvisioningContext.java
 	private Map<String, IRepositoryReference> metadataRepositorySnapshot = null;
 	private Map<String, IRepositoryReference> artifactRepositorySnapshot = null;
 	private Map<String, IArtifactRepository> referencedArtifactRepositories = null;
+=======
+	private Map<String, URI> referencedArtifactRepositories = null;
+>>>>>>> 1.17
 
 	private static final String FILE_PROTOCOL = "file"; //$NON-NLS-1$
 
@@ -159,7 +163,7 @@ public class ProvisioningContext {
 		Arrays.sort(repositories, LOCAL_FIRST_COMPARATOR);
 
 		List<IArtifactRepository> repos = new ArrayList<IArtifactRepository>();
-		SubMonitor sub = SubMonitor.convert(monitor, repositories.length * 100);
+		SubMonitor sub = SubMonitor.convert(monitor, (repositories.length + 1) * 100);
 		for (int i = 0; i < repositories.length; i++) {
 			if (sub.isCanceled())
 				throw new OperationCanceledException();
@@ -168,10 +172,21 @@ public class ProvisioningContext {
 			} catch (ProvisionException e) {
 				//skip unreadable repositories
 			}
+			// Remove this URI from the list of extra references if it is there.
+			if (referencedArtifactRepositories != null)
+				referencedArtifactRepositories.remove(repositories[i]);
 		}
-		if (referencedArtifactRepositories != null)
-			for (IArtifactRepository repo : referencedArtifactRepositories.values())
-				repos.add(repo);
+		// Are there any extra artifact repository references to consider?
+		if (referencedArtifactRepositories != null && referencedArtifactRepositories.size() > 0) {
+			SubMonitor innerSub = SubMonitor.convert(sub.newChild(100), referencedArtifactRepositories.size() * 100);
+			for (URI referencedURI : referencedArtifactRepositories.values()) {
+				try {
+					repos.add(repoManager.loadRepository(referencedURI, innerSub.newChild(100)));
+				} catch (ProvisionException e) {
+					// skip unreadable repositories
+				}
+			}
+		}
 		return repos;
 	}
 
@@ -206,6 +221,14 @@ public class ProvisioningContext {
 		// the metadata repos.  
 		referencedArtifactRepositories = new HashMap<String, IArtifactRepository>();
 
+<<<<<<< ProvisioningContext.java
+=======
+		HashMap<String, IMetadataRepository> repos = new HashMap<String, IMetadataRepository>();
+		SubMonitor sub = SubMonitor.convert(monitor, repositories.length * 100);
+
+		// Clear out the list of remembered artifact repositories
+		referencedArtifactRepositories = new HashMap<String, URI>();
+>>>>>>> 1.17
 		for (int i = 0; i < repositories.length; i++) {
 			if (sub.isCanceled())
 				throw new OperationCanceledException();
@@ -260,6 +283,7 @@ public class ProvisioningContext {
 			}
 			metadataRepositorySnapshot = null;
 		}
+<<<<<<< ProvisioningContext.java
 		if (artifactRepositorySnapshot != null) {
 			IArtifactRepositoryManager manager = (IArtifactRepositoryManager) agent.getService(IArtifactRepositoryManager.SERVICE_NAME);
 			List<URI> all = new ArrayList<URI>();
@@ -273,6 +297,27 @@ public class ProvisioningContext {
 					manager.setEnabled(location, (reference.getOptions() & IRepository.ENABLED) == IRepository.ENABLED);
 					manager.setRepositoryProperty(location, IRepository.PROP_NICKNAME, reference.getNickname());
 					artifactRepositorySnapshot.remove(location);
+=======
+		repos.put(location.toString(), repository);
+		Collection<IRepositoryReference> references = repository.getReferences();
+		// We always load artifact repositories referenced by this repository.  We might load
+		// metadata repositories
+		if (references.size() > 0) {
+			IArtifactRepositoryManager artifactManager = (IArtifactRepositoryManager) agent.getService(IArtifactRepositoryManager.SERVICE_NAME);
+			SubMonitor repoSubMon = SubMonitor.convert(sub.newChild(500), 100 * references.size());
+			for (IRepositoryReference ref : references) {
+				try {
+					if (ref.getType() == IRepository.TYPE_METADATA && followMetadataRepoReferences && isEnabled(manager, ref)) {
+						loadMetadataRepository(manager, ref.getLocation(), repos, followMetadataRepoReferences, repoSubMon.newChild(100));
+					} else if (ref.getType() == IRepository.TYPE_ARTIFACT) {
+						// We want to remember all enabled artifact repository locations.
+						if (isEnabled(artifactManager, ref))
+							referencedArtifactRepositories.put(ref.getLocation().toString(), ref.getLocation());
+					}
+				} catch (IllegalArgumentException e) {
+					// see https://bugs.eclipse.org/bugs/show_bug.cgi?id=311338
+					// ignore invalid location and keep going
+>>>>>>> 1.17
 				}
 			}
 			// Anything left in the map is no longer known by the manager, so add it back. (This is not likely)
@@ -285,6 +330,7 @@ public class ProvisioningContext {
 		}
 	}
 
+<<<<<<< ProvisioningContext.java
 	private void loadMetadataRepository(IMetadataRepositoryManager manager, URI location, Set<IMetadataRepository> repos, boolean followReferences, IProgressMonitor monitor) {
 		try {
 			if (!followReferences) {
@@ -313,6 +359,13 @@ public class ProvisioningContext {
 		} catch (ProvisionException e) {
 			//skip unreadable repositories
 		}
+=======
+	// If the manager knows about the repo, consider its enablement state in the manager.
+	// If the manager does not know about the repo, consider the reference enablement state
+	@SuppressWarnings("rawtypes")
+	private boolean isEnabled(IRepositoryManager manager, IRepositoryReference reference) {
+		return (manager.contains(reference.getLocation()) && manager.isEnabled(reference.getLocation())) || ((!manager.contains(reference.getLocation())) && ((reference.getOptions() & IRepository.ENABLED) == IRepository.ENABLED));
+>>>>>>> 1.17
 	}
 
 	private boolean shouldFollowReferences() {

@@ -26,6 +26,7 @@ import org.eclipse.jface.dialogs.*;
 import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.resource.JFaceResources;
 import org.eclipse.jface.viewers.*;
+import org.eclipse.osgi.util.NLS;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.SashForm;
 import org.eclipse.swt.dnd.*;
@@ -59,6 +60,7 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 	int batchCount = 0;
 	RepositorySelectionGroup repoSelector;
 	IUDetailsGroup iuDetailsGroup;
+	Label selectionCount;
 
 	public AvailableIUsPage(ProvisioningUI ui, ProvisioningOperationWizard wizard) {
 		super("AvailableSoftwarePage", ui, wizard); //$NON-NLS-1$
@@ -92,6 +94,12 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 		GridData data = new GridData(GridData.FILL_BOTH);
 		sashForm.setLayoutData(data);
 
+		Composite aboveSash = new Composite(sashForm, SWT.NONE);
+		GridLayout grid = new GridLayout();
+		grid.marginWidth = 0;
+		grid.marginHeight = 0;
+		aboveSash.setLayout(grid);
+
 		// Now the available group 
 		// If repositories are visible, we want to default to showing no repos.  Otherwise all.
 		int filterConstant = AvailableIUGroup.AVAILABLE_NONE;
@@ -101,7 +109,7 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 		versionColumn = new IUColumnConfig(ProvUIMessages.ProvUI_VersionColumnTitle, IUColumnConfig.COLUMN_VERSION, ILayoutConstants.DEFAULT_COLUMN_WIDTH);
 
 		getColumnWidthsFromSettings();
-		availableIUGroup = new AvailableIUGroup(getProvisioningUI(), sashForm, JFaceResources.getDialogFont(), queryContext, new IUColumnConfig[] {nameColumn, versionColumn}, filterConstant);
+		availableIUGroup = new AvailableIUGroup(getProvisioningUI(), aboveSash, JFaceResources.getDialogFont(), queryContext, new IUColumnConfig[] {nameColumn, versionColumn}, filterConstant);
 
 		// Selection listeners must be registered on both the normal selection
 		// events and the check mark events.  Must be done after buttons 
@@ -124,6 +132,9 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 		availableIUGroup.setUseBoldFontForFilteredItems(queryContext.getViewType() != IUViewQueryContext.AVAILABLE_VIEW_FLAT);
 		setDropTarget(availableIUGroup.getStructuredViewer().getControl());
 		activateCopy(availableIUGroup.getStructuredViewer().getControl());
+
+		// select buttons
+		createSelectButtons(aboveSash);
 
 		// Details area
 		iuDetailsGroup = new IUDetailsGroup(sashForm, availableIUGroup.getStructuredViewer(), SWT.DEFAULT, true);
@@ -153,6 +164,65 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 
 		});
 		Dialog.applyDialogFont(composite);
+	}
+
+	private void createSelectButtons(Composite parent) {
+		Composite buttonParent = new Composite(parent, SWT.NONE);
+		GridLayout gridLayout = new GridLayout();
+		gridLayout.numColumns = 3;
+		gridLayout.marginWidth = 0;
+		gridLayout.horizontalSpacing = convertHorizontalDLUsToPixels(IDialogConstants.HORIZONTAL_SPACING);
+		buttonParent.setLayout(gridLayout);
+
+		GridData data = new GridData(SWT.FILL, SWT.DEFAULT, true, false);
+		buttonParent.setLayoutData(data);
+
+		Button selectAll = new Button(buttonParent, SWT.PUSH);
+		selectAll.setText(ProvUIMessages.SelectableIUsPage_Select_All);
+		setButtonLayoutData(selectAll);
+		selectAll.addListener(SWT.Selection, new Listener() {
+			public void handleEvent(Event event) {
+				setAllChecked(true);
+			}
+		});
+
+		Button deselectAll = new Button(buttonParent, SWT.PUSH);
+		deselectAll.setText(ProvUIMessages.SelectableIUsPage_Deselect_All);
+		setButtonLayoutData(deselectAll);
+		deselectAll.addListener(SWT.Selection, new Listener() {
+			public void handleEvent(Event event) {
+				setAllChecked(false);
+			}
+		});
+
+		// dummy to take extra space
+		selectionCount = new Label(buttonParent, SWT.NONE);
+		data = new GridData(SWT.FILL, SWT.CENTER, true, true);
+		data.horizontalIndent = 20; // breathing room
+		selectionCount.setLayoutData(data);
+
+		// separator underneath
+		Label sep = new Label(buttonParent, SWT.HORIZONTAL | SWT.SEPARATOR);
+		data = new GridData(SWT.FILL, SWT.DEFAULT, true, false);
+		data.horizontalSpan = 3;
+		sep.setLayoutData(data);
+	}
+
+	// The viewer method is deprecated because it only applies to visible items,
+	// but this is exactly the behavior we want.
+	@SuppressWarnings("deprecation")
+	void setAllChecked(boolean checked) {
+		if (checked) {
+			// TODO ideally there should be API on AvailableIUGroup to do this.
+			// This is reachy and too knowledgeable of the group's implementation.
+			availableIUGroup.getCheckboxTreeViewer().setAllChecked(checked);
+			// to ensure that the listeners get processed.
+			availableIUGroup.setChecked(availableIUGroup.getCheckboxTreeViewer().getCheckedElements());
+
+		} else {
+			availableIUGroup.setChecked(new Object[0]);
+		}
+		updateSelection();
 	}
 
 	private void createViewControlsArea(Composite parent) {
@@ -227,6 +297,21 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 					repoComboSelectionChanged(repoChoice, repoLocation);
 				}
 			});
+			// The ProvisioningOperationWizard signals the start of a repository operation as a way
+			// to keep side-effect events from changing the selections or state of the wizard.
+			// This is the one case where we want to respond to repo events, because we are
+			// launching the repo manipulation page from the wizard.  So we signal the wizard's
+			// operation as complete and then resignal the start when done.
+			// see https://bugs.eclipse.org/bugs/show_bug.cgi?id=277265#c38
+			repoSelector.setRepositoryManipulationHook(new IRepositoryManipulationHook() {
+				public void preManipulateRepositories() {
+					getProvisioningUI().signalRepositoryOperationComplete(null, false);
+				}
+
+				public void postManipulateRepositories() {
+					getProvisioningUI().signalRepositoryOperationStart();
+				}
+			});
 		}
 	}
 
@@ -241,8 +326,15 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 	}
 
 	void updateSelection() {
-		setPageComplete(availableIUGroup.getCheckedLeafIUs().length > 0);
-		getProvisioningWizard().mainPageSelectionsChanged();
+		int count = availableIUGroup.getCheckedLeafIUs().length;
+		setPageComplete(count > 0);
+		if (count == 0)
+			selectionCount.setText(""); //$NON-NLS-1$
+		else {
+			String message = count == 1 ? ProvUIMessages.AvailableIUsPage_SingleSelectionCount : ProvUIMessages.AvailableIUsPage_MultipleSelectionCount;
+			selectionCount.setText(NLS.bind(message, Integer.toString(count)));
+		}
+		getProvisioningWizard().operationSelectionsChanged(this);
 	}
 
 	void updateQueryContext() {
@@ -525,7 +617,7 @@ public class AvailableIUsPage extends ProvisioningWizardPage implements ISelecta
 		// We might need to adjust the content of the available IU group's viewer
 		// according to installation changes.  We want to be very selective about refreshing,
 		// because the viewer has its own listeners installed.
-		profileListener = new StructuredViewerProvisioningListener(availableIUGroup.getStructuredViewer(), ProvUIProvisioningListener.PROV_EVENT_PROFILE) {
+		profileListener = new StructuredViewerProvisioningListener(getClass().getName(), availableIUGroup.getStructuredViewer(), ProvUIProvisioningListener.PROV_EVENT_PROFILE) {
 			protected void profileAdded(String id) {
 				// do nothing
 			}
