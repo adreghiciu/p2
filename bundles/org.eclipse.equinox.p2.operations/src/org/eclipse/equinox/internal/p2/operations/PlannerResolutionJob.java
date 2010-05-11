@@ -29,20 +29,22 @@ public class PlannerResolutionJob extends ProvisioningJob implements IProfileCha
 	IProvisioningPlan plan;
 	MultiStatus additionalStatus;
 	ResolutionResult report;
-	ProvisioningContext provisioningContext;
+	ProvisioningContext firstPass, successful;
+	IFailedStatusEvaluator evaluator;
 
 	public static MultiStatus getProfileChangeRequestAlteredStatus() {
 		return PlanAnalyzer.getProfileChangeAlteredStatus();
 	}
 
-	public PlannerResolutionJob(String label, ProvisioningSession session, String profileId, ProfileChangeRequest request, ProvisioningContext provisioningContext, MultiStatus additionalStatus) {
+	public PlannerResolutionJob(String label, ProvisioningSession session, String profileId, ProfileChangeRequest request, ProvisioningContext context, IFailedStatusEvaluator evaluator, MultiStatus additionalStatus) {
 		super(label, session);
 		this.request = request;
 		this.profileId = profileId;
-		if (provisioningContext == null)
-			this.provisioningContext = new ProvisioningContext(session.getProvisioningAgent());
+		if (context == null)
+			firstPass = new ProvisioningContext(session.getProvisioningAgent());
 		else
-			this.provisioningContext = provisioningContext;
+			firstPass = context;
+		this.evaluator = evaluator;
 		Assert.isNotNull(additionalStatus);
 		this.additionalStatus = additionalStatus;
 	}
@@ -55,18 +57,15 @@ public class PlannerResolutionJob extends ProvisioningJob implements IProfileCha
 		return request;
 	}
 
-	public ProvisioningContext getProvisioningContext() {
-		return provisioningContext;
+	public ProvisioningContext getActualProvisioningContext() {
+		return successful;
 	}
 
-	public void setProvisioningContext(ProvisioningContext context) {
-		this.provisioningContext = context;
+	public void setFirstPassProvisioningContext(ProvisioningContext firstPass) {
+		this.firstPass = firstPass;
 	}
 
 	public IStatus runModal(IProgressMonitor monitor) {
-<<<<<<< PlannerResolutionJob.java
-		plan = ((IPlanner) getSession().getProvisioningAgent().getService(IPlanner.SERVICE_NAME)).getProvisioningPlan(request, provisioningContext, monitor);
-=======
 		SubMonitor sub;
 		if (evaluator != null) {
 			sub = SubMonitor.convert(monitor, 1000);
@@ -95,14 +94,12 @@ public class PlannerResolutionJob extends ProvisioningJob implements IProfileCha
 
 		successful = secondPass;
 		plan = ((IPlanner) getSession().getProvisioningAgent().getService(IPlanner.SERVICE_NAME)).getProvisioningPlan(request, secondPass, sub.newChild(500));
->>>>>>> 1.7
 		if (plan == null) {
 			status = new Status(IStatus.ERROR, Activator.ID, Messages.PlannerResolutionJob_NullProvisioningPlan);
 			additionalStatus.add(status);
 			return status;
 		}
 		return plan.getStatus();
-
 	}
 
 	public ResolutionResult getResolutionResult() {

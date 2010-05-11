@@ -7,6 +7,7 @@
  * 
  *  Contributors:
  *      IBM Corporation - initial API and implementation
+ *      Sonatype, Inc. - ongoing development
  *******************************************************************************/
 package org.eclipse.equinox.internal.p2.director;
 
@@ -31,6 +32,7 @@ public class Slicer {
 
 	private LinkedList<IInstallableUnit> toProcess;
 	private Set<IInstallableUnit> considered; //IUs to add to the slice
+	private Set<IInstallableUnit> nonGreedyIUs = new HashSet<IInstallableUnit>(); //IUs that are brought in by non greedy dependencies
 
 	public Slicer(IQueryable<IInstallableUnit> input, Map<String, String> context, boolean considerMetaRequirements) {
 		this(input, InstallableUnit.contextIU(context), considerMetaRequirements);
@@ -121,6 +123,7 @@ public class Slicer {
 				continue;
 
 			if (!isGreedy(req)) {
+				nonGreedyIUs.addAll(possibilites.query(QueryUtil.createMatchQuery(req.getMatches()), null).toUnmodifiableSet());
 				continue;
 			}
 
@@ -186,5 +189,9 @@ public class Slicer {
 	private void consider(IInstallableUnit match) {
 		if (considered.add(match))
 			toProcess.addLast(match);
+	}
+
+	Set<IInstallableUnit> getNonGreedyIUs() {
+		return nonGreedyIUs;
 	}
 }

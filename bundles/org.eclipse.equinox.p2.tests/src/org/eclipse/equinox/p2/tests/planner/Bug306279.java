@@ -32,11 +32,7 @@ public class Bug306279 extends AbstractProvisioningTest {
 		URI rienaRepo2 = getTestData("rienatoolbox-a", "testData/bug306279/repo/rienatoolbox-a").toURI();
 		IMetadataRepository repo1 = getMetadataRepositoryManager().loadRepository(heliosRepo, null);
 		assertFalse(repo1.query(QueryUtil.createIUQuery("org.eclipse.rap.jface.databinding"), new NullProgressMonitor()).isEmpty());
-<<<<<<< Bug306279.java
-		IMetadataRepository repo2 = getMetadataRepositoryManager().loadRepository(new URI("http://download.eclipse.org/rt/riena/updatesites/rienatoolbox"), null);
-=======
 		IMetadataRepository repo2 = getMetadataRepositoryManager().loadRepository(rienaRepo2, null);
->>>>>>> 1.4
 
 		IPlanner planner = getPlanner(getAgent());
 		IProfile profile = createProfile(getName());
@@ -44,11 +40,7 @@ public class Bug306279 extends AbstractProvisioningTest {
 		Set<IInstallableUnit> ius = repo2.query(QueryUtil.createIUQuery("org.eclipse.riena.toolbox.feature.feature.group"), new NullProgressMonitor()).toUnmodifiableSet();
 		request.addAll(ius);
 		ProvisioningContext ctx = new ProvisioningContext(getAgent());
-<<<<<<< Bug306279.java
-		ctx.setMetadataRepositories(new URI[] {new URI("http://download.eclipse.org/releases/helios"), new URI("http://download.eclipse.org/rt/riena/updatesites/rienatoolbox")});
-=======
 		ctx.setMetadataRepositories(new URI[] {heliosRepo, rienaRepo2});
->>>>>>> 1.4
 		IProvisioningPlan plan = planner.getProvisioningPlan(request, ctx, new NullProgressMonitor());
 
 		assertOK("resolution failed", plan.getStatus());
