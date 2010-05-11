@@ -19,6 +19,7 @@ import org.eclipse.core.runtime.*;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.equinox.internal.p2.core.helpers.CollectionUtils;
 import org.eclipse.equinox.internal.p2.core.helpers.Tracing;
+import org.eclipse.equinox.internal.p2.director.Explanation.NotInstallableRoot;
 import org.eclipse.equinox.internal.p2.metadata.IRequiredCapability;
 import org.eclipse.equinox.internal.p2.metadata.InstallableUnit;
 import org.eclipse.equinox.p2.metadata.*;
@@ -261,7 +262,7 @@ public class Projector {
 				maxWeight = weight;
 		}
 
-		// no need to add one here, since maxWeight is strickly greater than the
+		// no need to add one here, since maxWeight is strictly greater than the
 		// maximal weight used so far.
 		maxWeight = maxWeight.multiply(POWER);
 
@@ -335,7 +336,7 @@ public class Projector {
 		if (DEBUG) {
 			Tracing.debug(iu + "=0"); //$NON-NLS-1$
 		}
-		dependencyHelper.setFalse(iu, new Explanation.MissingIU(iu, req));
+		dependencyHelper.setFalse(iu, new Explanation.MissingIU(iu, req, iu == this.entryPoint));
 	}
 
 	// Check whether the requirement is applicable
@@ -370,6 +371,19 @@ public class Projector {
 		createNegationImplication(iu, matches, explanation);
 	}
 
+	private void determinePotentialHostsForFragment(IInstallableUnit iu) {
+		// determine matching hosts only for fragments
+		if (!(iu instanceof IInstallableUnitFragment))
+			return;
+
+		IInstallableUnitFragment fragment = (IInstallableUnitFragment) iu;
+		// for each host requirement, find matches and remember them 
+		for (IRequirement req : fragment.getHost()) {
+			List<IInstallableUnit> matches = getApplicableMatches(req);
+			rememberHostMatches((IInstallableUnitFragment) iu, matches);
+		}
+	}
+
 	private void expandRequirement(IRequirement req, IInstallableUnit iu, List<AbstractVariable> optionalAbstractRequirements, boolean isRootIu) throws ContradictionException {
 		if (req.getMax() == 0) {
 			expandNegatedRequirement(req, iu, optionalAbstractRequirements, isRootIu);
@@ -378,12 +392,14 @@ public class Projector {
 		if (!isApplicable(req))
 			return;
 		List<IInstallableUnit> matches = getApplicableMatches(req);
-		if (isHostRequirement(iu, req)) {
-			rememberHostMatches((IInstallableUnitFragment) iu, matches);
-		}
+		determinePotentialHostsForFragment(iu);
 		if (req.getMin() > 0) {
 			if (matches.isEmpty()) {
-				missingRequirement(iu, req);
+				if (iu == entryPoint && emptyBecauseFiltered) {
+					dependencyHelper.setFalse(iu, new NotInstallableRoot(req));
+				} else {
+					missingRequirement(iu, req);
+				}
 			} else {
 				IInstallableUnit reqIu = matches.get(0);
 				Explanation explanation;
@@ -442,18 +458,21 @@ public class Projector {
 	}
 
 	private Collection<IRequirement> getRequiredCapabilities(IInstallableUnit iu) {
-		Collection<IRequirement> rqs = iu.getRequirements();
-		if (!considerMetaRequirements)
-			return rqs;
+		boolean isFragment = iu instanceof IInstallableUnitFragment;
+		//Short-circuit for the case of an IInstallableUnit 
+		if ((!isFragment) && iu.getMetaRequirements().size() == 0)
+			return iu.getRequirements();
 
-		Collection<IRequirement> metaRqs = iu.getMetaRequirements();
-		if (metaRqs.isEmpty())
-			return rqs;
+		ArrayList<IRequirement> aggregatedRequirements = new ArrayList<IRequirement>(iu.getRequirements().size() + iu.getMetaRequirements().size() + (isFragment ? ((IInstallableUnitFragment) iu).getHost().size() : 0));
+		aggregatedRequirements.addAll(iu.getRequirements());
 
-		ArrayList<IRequirement> aggregatedRqs = new ArrayList<IRequirement>(rqs.size() + metaRqs.size());
-		aggregatedRqs.addAll(rqs);
-		aggregatedRqs.addAll(metaRqs);
-		return aggregatedRqs;
+		if (iu instanceof IInstallableUnitFragment) {
+			aggregatedRequirements.addAll(((IInstallableUnitFragment) iu).getHost());
+		}
+
+		if (considerMetaRequirements)
+			aggregatedRequirements.addAll(iu.getMetaRequirements());
+		return aggregatedRequirements;
 	}
 
 	static final class Pending {
@@ -482,6 +501,10 @@ public class Projector {
 			for (int i = 0; i < reqs.length; i++) {
 				//The requirement is unchanged
 				if (reqs[i][0] == reqs[i][1]) {
+					if (reqs[i][0].getMax() == 0) {
+						expandNegatedRequirement(reqs[i][0], iu, optionalAbstractRequirements, isRootIu);
+						return;
+					}
 					if (!isApplicable(reqs[i][0]))
 						continue;
 
@@ -499,9 +522,7 @@ public class Projector {
 				if (isApplicable(reqs[i][1])) {
 					IRequirement req = reqs[i][1];
 					List<IInstallableUnit> matches = getApplicableMatches(req);
-					if (isHostRequirement(iu, req)) {
-						rememberHostMatches((IInstallableUnitFragment) iu, matches);
-					}
+					determinePotentialHostsForFragment(iu);
 					if (req.getMin() > 0) {
 						if (matches.isEmpty()) {
 							missingRequirement(patch, req);
@@ -541,9 +562,7 @@ public class Projector {
 					}
 
 					List<IInstallableUnit> matches = getApplicableMatches(req);
-					if (isHostRequirement(iu, req)) {
-						rememberHostMatches((IInstallableUnitFragment) iu, matches);
-					}
+					determinePotentialHostsForFragment(iu);
 					if (req.getMin() > 0) {
 						if (matches.isEmpty()) {
 							dependencyHelper.implication(new Object[] {iu}).implies(patch).named(new Explanation.HardRequirement(iu, null));
@@ -606,9 +625,7 @@ public class Projector {
 			}
 			IRequirement req = entry.getKey();
 			List<IInstallableUnit> matches = getApplicableMatches(req);
-			if (isHostRequirement(iu, req)) {
-				rememberHostMatches((IInstallableUnitFragment) iu, matches);
-			}
+			determinePotentialHostsForFragment(iu);
 			if (req.getMin() > 0) {
 				if (matches.isEmpty()) {
 					if (requiredPatches.isEmpty()) {
@@ -660,6 +677,8 @@ public class Projector {
 		createNegation(iu, req);
 	}
 
+	private boolean emptyBecauseFiltered;
+
 	/**
 	 * @param req
 	 * @return a list of mandatory requirements if any, an empty list if req.isOptional().
@@ -673,6 +692,7 @@ public class Projector {
 				target.add(match);
 			}
 		}
+		emptyBecauseFiltered = !matches.isEmpty() && target.isEmpty();
 		return target;
 	}
 
@@ -955,16 +975,4 @@ public class Projector {
 		}
 		existingMatches.retainAll(matches);
 	}
-
-	private boolean isHostRequirement(IInstallableUnit iu, IRequirement req) {
-		if (!(iu instanceof IInstallableUnitFragment))
-			return false;
-		IInstallableUnitFragment fragment = (IInstallableUnitFragment) iu;
-		for (IRequirement hostReqs : fragment.getHost()) {
-			if (req.equals(hostReqs))
-				return true;
-		}
-		return false;
-	}
-
 }

@@ -64,9 +64,42 @@ public class PlannerResolutionJob extends ProvisioningJob implements IProfileCha
 	}
 
 	public IStatus runModal(IProgressMonitor monitor) {
+<<<<<<< PlannerResolutionJob.java
 		plan = ((IPlanner) getSession().getProvisioningAgent().getService(IPlanner.SERVICE_NAME)).getProvisioningPlan(request, provisioningContext, monitor);
+=======
+		SubMonitor sub;
+		if (evaluator != null) {
+			sub = SubMonitor.convert(monitor, 1000);
+		} else {
+			sub = SubMonitor.convert(monitor, 500);
+		}
+
+		plan = ((IPlanner) getSession().getProvisioningAgent().getService(IPlanner.SERVICE_NAME)).getProvisioningPlan(request, firstPass, sub.newChild(500));
+		IStatus status;
 		if (plan == null) {
-			return new Status(IStatus.ERROR, Activator.ID, Messages.PlannerResolutionJob_NullProvisioningPlan);
+			status = new Status(IStatus.ERROR, Activator.ID, Messages.PlannerResolutionJob_NullProvisioningPlan);
+			additionalStatus.add(status);
+		} else {
+			status = plan.getStatus();
+		}
+
+		if (status.getSeverity() != IStatus.ERROR || evaluator == null) {
+			successful = firstPass;
+			return status;
+		}
+
+		// First resolution was in error, try again with an alternate provisioning context
+		ProvisioningContext secondPass = evaluator.getSecondPassProvisioningContext(plan);
+		if (secondPass == null)
+			return status;
+
+		successful = secondPass;
+		plan = ((IPlanner) getSession().getProvisioningAgent().getService(IPlanner.SERVICE_NAME)).getProvisioningPlan(request, secondPass, sub.newChild(500));
+>>>>>>> 1.7
+		if (plan == null) {
+			status = new Status(IStatus.ERROR, Activator.ID, Messages.PlannerResolutionJob_NullProvisioningPlan);
+			additionalStatus.add(status);
+			return status;
 		}
 		return plan.getStatus();
 
@@ -74,7 +107,15 @@ public class PlannerResolutionJob extends ProvisioningJob implements IProfileCha
 
 	public ResolutionResult getResolutionResult() {
 		if (report == null) {
-			report = PlanAnalyzer.computeResolutionResult(request, plan, additionalStatus);
+			if (plan == null) {
+				if (additionalStatus.getSeverity() != IStatus.ERROR) {
+					additionalStatus.add(new Status(IStatus.ERROR, Activator.ID, Messages.PlannerResolutionJob_NullProvisioningPlan));
+				}
+				report = new ResolutionResult();
+				report.addSummaryStatus(additionalStatus);
+			} else {
+				report = PlanAnalyzer.computeResolutionResult(request, plan, additionalStatus);
+			}
 		}
 		return report;
 	}

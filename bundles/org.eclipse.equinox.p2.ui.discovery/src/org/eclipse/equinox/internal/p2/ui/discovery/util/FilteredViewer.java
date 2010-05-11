@@ -230,11 +230,23 @@ public abstract class FilteredViewer {
 					}
 				}
 			});
+<<<<<<< FilteredViewer.java
 			GridDataFactory.fillDefaults().grab(true, false).span(2, 1).applyTo(filterText);
 		} else {
 			GridDataFactory.fillDefaults().grab(true, false).applyTo(filterText);
 			clearFilterTextControl = createClearFilterTextControl(textFilterContainer, filterText);
 			clearFilterTextControl.setVisible(false);
+=======
+		} else {
+			filterText.getTextControl().addTraverseListener(new TraverseListener() {
+				public void keyTraversed(TraverseEvent e) {
+					if (e.detail == SWT.TRAVERSE_RETURN) {
+						e.doit = false;
+						filterTextChanged();
+					}
+				}
+			});
+>>>>>>> 1.8
 		}
 	}
 

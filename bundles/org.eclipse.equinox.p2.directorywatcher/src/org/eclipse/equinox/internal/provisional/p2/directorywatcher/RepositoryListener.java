@@ -17,6 +17,7 @@ import java.util.*;
 import org.eclipse.core.runtime.*;
 import org.eclipse.equinox.internal.p2.artifact.repository.simple.SimpleArtifactDescriptor;
 import org.eclipse.equinox.internal.p2.core.helpers.LogHelper;
+import org.eclipse.equinox.internal.p2.core.helpers.Tracing;
 import org.eclipse.equinox.internal.p2.update.Site;
 import org.eclipse.equinox.p2.core.ProvisionException;
 import org.eclipse.equinox.p2.metadata.IInstallableUnit;
@@ -240,8 +241,10 @@ public class RepositoryListener extends DirectoryChangeListener {
 				SimpleArtifactDescriptor descriptor = (SimpleArtifactDescriptor) iterator.next();
 				String filename = descriptor.getRepositoryProperty(FILE_NAME);
 				if (filename == null) {
-					String message = NLS.bind(Messages.filename_missing, "artifact", descriptor.getArtifactKey()); //$NON-NLS-1$
-					LogHelper.log(new Status(IStatus.ERROR, Activator.ID, message, null));
+					if (Tracing.DEBUG) {
+						String message = NLS.bind(Messages.filename_missing, "artifact", descriptor.getArtifactKey()); //$NON-NLS-1$
+						LogHelper.log(new Status(IStatus.ERROR, Activator.ID, message, null));
+					}
 				} else {
 					File artifactFile = new File(filename);
 					if (removedFiles.contains(artifactFile))
@@ -264,8 +267,10 @@ public class RepositoryListener extends DirectoryChangeListener {
 				IInstallableUnit iu = it.next();
 				String filename = iu.getProperty(FILE_NAME);
 				if (filename == null) {
-					String message = NLS.bind(Messages.filename_missing, "installable unit", iu.getId()); //$NON-NLS-1$
-					LogHelper.log(new Status(IStatus.ERROR, Activator.ID, message, null));
+					if (Tracing.DEBUG) {
+						String message = NLS.bind(Messages.filename_missing, "installable unit", iu.getId()); //$NON-NLS-1$
+						LogHelper.log(new Status(IStatus.ERROR, Activator.ID, message, null));
+					}
 				} else {
 					File iuFile = new File(filename);
 					Long iuLastModified = new Long(iu.getProperty(FILE_LAST_MODIFIED));

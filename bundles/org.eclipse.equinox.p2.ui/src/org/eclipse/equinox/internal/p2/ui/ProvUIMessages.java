@@ -149,6 +149,7 @@ public class ProvUIMessages extends NLS {
 	public static String RepositoryNameAndLocationDialog_Title;
 
 	public static String RepositorySelectionGroup_GenericSiteLinkTitle;
+	public static String RepositorySelectionGroup_NameAndLocationSeparator;
 	public static String RepositorySelectionGroup_PrefPageLink;
 	public static String RepositorySelectionGroup_PrefPageName;
 	public static String ResolutionWizardPage_Canceled;
@@ -174,6 +175,7 @@ public class ProvUIMessages extends NLS {
 	public static String AvailableIUsPage_GroupByCategory;
 	public static String AvailableIUsPage_HideInstalledItems;
 	public static String AvailableIUsPage_LocalSites;
+	public static String AvailableIUsPage_MultipleSelectionCount;
 	public static String AvailableIUsPage_NameWithLocation;
 	public static String AvailableIUsPage_NoSites;
 	public static String AvailableIUsPage_RepoFilterInstructions;
@@ -181,6 +183,7 @@ public class ProvUIMessages extends NLS {
 	public static String AvailableIUsPage_ResolveAllCheckbox;
 	public static String AvailableIUsPage_SelectASite;
 	public static String AvailableIUsPage_ShowLatestVersions;
+	public static String AvailableIUsPage_SingleSelectionCount;
 	public static String AvailableIUsPage_Title;
 	public static String AvailableIUWrapper_AllAreInstalled;
 	public static String IUViewQueryContext_AllAreInstalledDescription;
@@ -191,6 +194,7 @@ public class ProvUIMessages extends NLS {
 	public static String LoadMetadataRepositoryJob_ContactSitesProgress;
 	public static String LoadMetadataRepositoryJob_SitesMissingError;
 	public static String RepositoryElement_NotFound;
+	public static String RepositoryTracker_DuplicateLocation;
 	public static String MetadataRepositoryElement_RepositoryLoadError;
 	public static String UpdateAction_UpdatesAvailableMessage;
 	public static String UpdateAction_UpdatesAvailableTitle;
