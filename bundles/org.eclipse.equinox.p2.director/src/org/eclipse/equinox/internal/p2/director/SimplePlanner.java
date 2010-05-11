@@ -17,6 +17,8 @@ import java.util.*;
 import org.eclipse.core.runtime.*;
 import org.eclipse.equinox.internal.p2.core.helpers.LogHelper;
 import org.eclipse.equinox.internal.p2.core.helpers.Tracing;
+import org.eclipse.equinox.internal.p2.director.Explanation.MissingIU;
+import org.eclipse.equinox.internal.p2.metadata.IRequiredCapability;
 import org.eclipse.equinox.internal.p2.metadata.query.UpdateQuery;
 import org.eclipse.equinox.internal.p2.rollback.FormerState;
 import org.eclipse.equinox.internal.provisional.p2.director.*;
@@ -39,6 +41,9 @@ public class SimplePlanner implements IPlanner {
 	private static final String ID_IU_FOR_ACTIONS = "org.eclipse.equinox.p2.engine.actions.root"; //$NON-NLS-1$
 	private static final String EXPLANATION = "org.eclipse.equinox.p2.director.explain"; //$NON-NLS-1$
 	private static final String CONSIDER_METAREQUIREMENTS = "org.eclipse.equinox.p2.planner.resolveMetaRequirements"; //$NON-NLS-1$
+
+	static final int UNSATISFIABLE = 1; //status code indicating that the problem is not satisfiable
+
 	private final IProvisioningAgent agent;
 	private final IProfileRegistry profileRegistry;
 	private final IEngine engine;
@@ -124,6 +129,22 @@ public class SimplePlanner implements IPlanner {
 	private IStatus convertExplanationToStatus(Set<Explanation> explanations) {
 		if (explanations == null)
 			return new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, Messages.Director_Unsatisfied_Dependencies);
+
+		// hack to create a useful message when a user installs something intended for a target platform into the IDE
+		ArrayList<IStatus> forTargets = new ArrayList<IStatus>(0);
+		for (Explanation next : explanations) {
+			if (next instanceof Explanation.MissingIU) {
+				Explanation.MissingIU missingIU = (MissingIU) next;
+				if (missingIU.req instanceof IRequiredCapability && "A.PDE.Target.Platform".equals(((IRequiredCapability) missingIU.req).getNamespace())) //$NON-NLS-1$
+					forTargets.add(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, missingIU.getUserReadableName(missingIU.iu)));
+			}
+		}
+		if (forTargets.size() > 0) {
+			// add a blurb about disabling 'include required software'.  The following line could be removed if bug 309863 is fixed
+			forTargets.add(new Status(IStatus.ERROR, DirectorActivator.PI_DIRECTOR, Messages.Director_For_Target_Unselect_Required));
+			// return a multi status with all the IUs that require A.PDE.Target.Platform
+			return new MultiStatus(DirectorActivator.PI_DIRECTOR, 1, forTargets.toArray(new IStatus[forTargets.size()]), Messages.Director_For_Target, null);
+		}
 		MultiStatus root = new MultiStatus(DirectorActivator.PI_DIRECTOR, 1, Messages.Director_Unsatisfied_Dependencies, null);
 		//try to find a more specific root message if possible
 		String specificMessage = null;
@@ -301,14 +322,10 @@ public class SimplePlanner implements IPlanner {
 				plan.setStatus(slicer.getStatus());
 				return plan;
 			}
-<<<<<<< SimplePlanner.java
-			Projector projector = new Projector(slice, newSelectionContext, satisfyMetaRequirements(profileChangeRequest.getProfileProperties()));
-=======
 			@SuppressWarnings("unchecked")
 			final IQueryable<IInstallableUnit>[] queryables = new IQueryable[] {slice, new QueryableArray(profileChangeRequest.getAdditions().toArray(new IInstallableUnit[profileChangeRequest.getAdditions().size()]))};
 			slice = new CompoundQueryable<IInstallableUnit>(queryables);
 			Projector projector = new Projector(slice, newSelectionContext, slicer.getNonGreedyIUs(), satisfyMetaRequirements(profileChangeRequest.getProfileProperties()));
->>>>>>> 1.124
 			projector.encode((IInstallableUnit) updatedPlan[0], (IInstallableUnit[]) updatedPlan[1], profile, profileChangeRequest.getAdditions(), sub.newChild(ExpandWork / 4));
 			IStatus s = projector.invokeSolver(sub.newChild(ExpandWork / 4));
 			if (s.getSeverity() == IStatus.CANCEL) {
@@ -318,7 +335,7 @@ public class SimplePlanner implements IPlanner {
 			}
 			if (s.getSeverity() == IStatus.ERROR) {
 				sub.setTaskName(Messages.Planner_NoSolution);
-				if (context != null && !(context.getProperty(EXPLANATION) == null || Boolean.TRUE.toString().equalsIgnoreCase(context.getProperty(EXPLANATION)))) {
+				if (s.getCode() != UNSATISFIABLE || (context != null && !(context.getProperty(EXPLANATION) == null || Boolean.TRUE.toString().equalsIgnoreCase(context.getProperty(EXPLANATION))))) {
 					IProvisioningPlan plan = engine.createPlan(profile, context);
 					plan.setStatus(s);
 					return plan;

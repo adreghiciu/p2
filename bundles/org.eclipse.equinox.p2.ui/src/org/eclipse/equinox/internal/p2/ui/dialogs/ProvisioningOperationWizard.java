@@ -162,7 +162,7 @@ public abstract class ProvisioningOperationWizard extends Wizard {
 		if (currentProvisioningContext == null && provisioningContext == null)
 			return false;
 		if (currentProvisioningContext != null && provisioningContext != null)
-			return currentProvisioningContext.equals(provisioningContext);
+			return !currentProvisioningContext.equals(provisioningContext);
 		// One is null and the other is not
 		return true;
 	}
@@ -182,7 +182,7 @@ public abstract class ProvisioningOperationWizard extends Wizard {
 	protected abstract void initializeResolutionModelElements(Object[] selectedElements);
 
 	protected ProvisioningContext getProvisioningContext() {
-		return null;
+		return new ProvisioningContext(ui.getSession().getProvisioningAgent());
 	}
 
 	/**

@@ -30,6 +30,8 @@ public class Messages extends NLS {
 	public static String Director_Task_Resolving_Dependencies;
 	public static String Director_Unsatisfied_Dependencies;
 	public static String Director_error_applying_configuration;
+	public static String Director_For_Target;
+	public static String Director_For_Target_Unselect_Required;
 
 	public static String Explanation_alreadyInstalled;
 	public static String Explanation_from;
@@ -37,11 +39,8 @@ public class Messages extends NLS {
 	public static String Explanation_hardDependency;
 	public static String Explanation_patchedHardDependency;
 	public static String Explanation_missingRequired;
-<<<<<<< Messages.java
-=======
 	public static String Explanation_missingRootRequired;
 	public static String Explanation_missingNonGreedyRequired;
->>>>>>> 1.26
 	public static String Explanation_missingRequiredFilter;
 	public static String Explanation_missingRootFilter;
 	public static String Explanation_optionalDependency;
