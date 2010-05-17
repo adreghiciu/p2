@@ -187,7 +187,6 @@ public class ProvUIMessages extends NLS {
 	public static String AvailableIUsPage_Title;
 	public static String AvailableIUWrapper_AllAreInstalled;
 	public static String IUViewQueryContext_AllAreInstalledDescription;
-	public static String ElementUtils_UpdateJobTitle;
 	public static String Label_Profiles;
 	public static String Label_Repositories;
 	public static String LaunchUpdateManagerButton;
@@ -236,6 +235,7 @@ public class ProvUIMessages extends NLS {
 	public static String UpdateManagerCompatibility_ImportSitesTitle;
 	public static String UpdateManagerCompatibility_InvalidSiteFileMessage;
 	public static String UpdateManagerCompatibility_InvalidSitesTitle;
+	public static String UpdateManagerCompatibility_ItemRequiresUpdateManager;
 	public static String UpdateManagerCompatibility_UnableToOpenFindAndInstall;
 	public static String UpdateManagerCompatibility_UnableToOpenManageConfiguration;
 	public static String ServiceUI_LoginDetails;
