@@ -22,13 +22,14 @@ import org.eclipse.core.runtime.*;
 import org.eclipse.equinox.app.IApplication;
 import org.eclipse.equinox.app.IApplicationContext;
 import org.eclipse.equinox.internal.p2.core.helpers.*;
+import org.eclipse.equinox.internal.p2.metadata.query.UpdateQuery;
 import org.eclipse.equinox.internal.provisional.p2.director.*;
 import org.eclipse.equinox.p2.core.*;
 import org.eclipse.equinox.p2.engine.*;
+import org.eclipse.equinox.p2.engine.query.IUProfilePropertyQuery;
 import org.eclipse.equinox.p2.metadata.*;
 import org.eclipse.equinox.p2.metadata.Version;
-import org.eclipse.equinox.p2.planner.IPlanner;
-import org.eclipse.equinox.p2.planner.IProfileChangeRequest;
+import org.eclipse.equinox.p2.planner.*;
 import org.eclipse.equinox.p2.query.*;
 import org.eclipse.equinox.p2.repository.artifact.IArtifactRepositoryManager;
 import org.eclipse.equinox.p2.repository.metadata.IMetadataRepositoryManager;
@@ -131,6 +132,7 @@ public class DirectorApplication implements IApplication {
 	private static final CommandLineOption OPTION_P2_ARCH = new CommandLineOption(new String[] {"-p2.arch"}, null, Messages.Help_The_ARCH_when_profile_is_created); //$NON-NLS-1$
 	private static final CommandLineOption OPTION_P2_NL = new CommandLineOption(new String[] {"-p2.nl"}, null, Messages.Help_The_NL_when_profile_is_created); //$NON-NLS-1$
 	private static final CommandLineOption OPTION_PURGEHISTORY = new CommandLineOption(new String[] {"-purgeHistory"}, null, Messages.Help_Purge_the_install_registry); //$NON-NLS-1$
+	private static final CommandLineOption OPTION_UPDATE_IUS = new CommandLineOption(new String[] {"-updateIUs"}, null, Messages.Help_Update_Roots); //$NON-NLS-1$
 
 	private static final Integer EXIT_ERROR = new Integer(13);
 	static private final String FLAVOR_DEFAULT = "tooling"; //$NON-NLS-1$
@@ -213,6 +215,7 @@ public class DirectorApplication implements IApplication {
 	private boolean verifyOnly = false;
 	private boolean roamingProfile = false;
 	private boolean purgeRegistry = false;
+	private boolean updateRoots = false;
 	private boolean stackTrace = false;
 	private String profileId;
 	private String profileProperties; // a comma-separated list of property pairs "tag=value"
@@ -231,8 +234,8 @@ public class DirectorApplication implements IApplication {
 	private IProvisioningAgent targetAgent;
 	private boolean noArtifactRepositorySpecified = false;
 
-	private ProfileChangeRequest buildProvisioningRequest(IProfile profile, Collection<IInstallableUnit> installs, Collection<IInstallableUnit> uninstalls) {
-		ProfileChangeRequest request = new ProfileChangeRequest(profile);
+	private IProfileChangeRequest buildProvisioningRequest(IProfile profile, Collection<IInstallableUnit> installs, Collection<IInstallableUnit> uninstalls) {
+		IProfileChangeRequest request = ((IPlanner) targetAgent.getService(IPlanner.SERVICE_NAME)).createChangeRequest(profile);
 		markRoots(request, installs);
 		markRoots(request, uninstalls);
 		request.addAll(installs);
@@ -533,6 +536,95 @@ public class DirectorApplication implements IApplication {
 		}
 	}
 
+	private IProvisioningPlan buildOptimalUpdateRequest(IProfile prof, IPlanner plan, ProvisioningContext context) {
+		final String INCLUSION_RULES = "org.eclipse.equinox.p2.internal.inclusion.rules"; //$NON-NLS-1$
+		final String INCLUSION_OPTIONAL = "OPTIONAL"; //$NON-NLS-1$
+		final String INCLUSION_STRICT = "STRICT"; //$NON-NLS-1$
+
+		IQueryResult<IInstallableUnit> strictRoots = prof.query(new IUProfilePropertyQuery(INCLUSION_RULES, INCLUSION_STRICT), null);
+		IQueryResult<IInstallableUnit> optionalRoots = prof.query(new IUProfilePropertyQuery(INCLUSION_RULES, INCLUSION_OPTIONAL), null);
+		Set<IInstallableUnit> tmpRoots = new HashSet<IInstallableUnit>(strictRoots.toUnmodifiableSet());
+		tmpRoots.addAll(optionalRoots.toUnmodifiableSet());
+		CollectionResult<IInstallableUnit> allRoots = new CollectionResult<IInstallableUnit>(tmpRoots);
+
+		IProfileChangeRequest newRequest = plan.createChangeRequest(prof);
+		Collection<IRequirement> limitingRequirements = new ArrayList<IRequirement>();
+
+		for (Iterator<IInstallableUnit> iterator = allRoots.query(QueryUtil.ALL_UNITS, null).iterator(); iterator.hasNext();) {
+			IInstallableUnit currentlyInstalled = iterator.next();
+
+			//find all the potential updates for the currentlyInstalled iu
+			IQueryResult<IInstallableUnit> updatesAvailable = plan.updatesFor(currentlyInstalled, context, null);
+			for (Iterator<IInstallableUnit> iterator2 = updatesAvailable.iterator(); iterator2.hasNext();) {
+				IInstallableUnit update = iterator2.next();
+				newRequest.add(update);
+				newRequest.setInstallableUnitInclusionRules(update, ProfileInclusionRules.createOptionalInclusionRule(update));
+			}
+			if (!updatesAvailable.isEmpty()) {
+				//force the original IU to optional, but make sure that the solution at least includes it
+				newRequest.setInstallableUnitInclusionRules(currentlyInstalled, ProfileInclusionRules.createOptionalInclusionRule(currentlyInstalled));
+				limitingRequirements.add(MetadataFactory.createRequirement(IInstallableUnit.NAMESPACE_IU_ID, currentlyInstalled.getId(), new VersionRange(currentlyInstalled.getVersion(), true, Version.MAX_VERSION, true), null, false, false));
+			}
+		}
+
+		IProvisioningPlan updateFinderPlan = planner.getProvisioningPlan(newRequest, context, null);
+		if (updateFinderPlan.getAdditions().query(QueryUtil.ALL_UNITS, null).isEmpty())
+			return null;
+
+		//Take into account all the removals
+		IProfileChangeRequest finalChangeRequest = plan.createChangeRequest(prof);
+		IQueryResult<IInstallableUnit> removals = updateFinderPlan.getRemovals().query(QueryUtil.ALL_UNITS, null);
+		for (Iterator<IInstallableUnit> iterator = removals.iterator(); iterator.hasNext();) {
+			IInstallableUnit iu = iterator.next();
+			if (!allRoots.query(QueryUtil.createIUQuery(iu), null).isEmpty()) {
+				finalChangeRequest.remove(iu);
+			}
+		}
+
+		//Take into account the additions for stricts
+		for (Iterator<IInstallableUnit> iterator = strictRoots.iterator(); iterator.hasNext();) {
+			IInstallableUnit formerRoot = iterator.next();
+			IQueryResult<IInstallableUnit> update = updateFinderPlan.getAdditions().query(new UpdateQuery(formerRoot), null);
+			if (!update.isEmpty())
+				finalChangeRequest.addAll(update.toUnmodifiableSet());
+		}
+
+		//Take into account the additions for optionals
+		for (Iterator<IInstallableUnit> iterator = optionalRoots.iterator(); iterator.hasNext();) {
+			IInstallableUnit formerRoot = iterator.next();
+			IQueryResult<IInstallableUnit> update = updateFinderPlan.getAdditions().query(new UpdateQuery(formerRoot), null);
+			if (!update.isEmpty()) {
+				for (Iterator<IInstallableUnit> it = update.iterator(); it.hasNext();) {
+					IInstallableUnit updatedOptionalIU = it.next();
+					finalChangeRequest.add(updatedOptionalIU);
+					finalChangeRequest.setInstallableUnitInclusionRules(updatedOptionalIU, ProfileInclusionRules.createOptionalInclusionRule(updatedOptionalIU));
+				}
+			}
+		}
+		printRequest(finalChangeRequest);
+		return planner.getProvisioningPlan(finalChangeRequest, context, null);
+	}
+
+	public void performUpdateAction() throws CoreException {
+		IProfile profile = initializeProfile();
+
+		// keep this result status in case there is a problem so we can report it to the user
+		boolean wasRoaming = Boolean.valueOf(profile.getProperty(IProfile.PROP_ROAMING)).booleanValue();
+		try {
+			ProvisioningContext context = new ProvisioningContext(targetAgent);
+			context.setMetadataRepositories(metadataRepositoryLocations.toArray(new URI[metadataRepositoryLocations.size()]));
+			context.setArtifactRepositories(artifactRepositoryLocations.toArray(new URI[artifactRepositoryLocations.size()]));
+			IProvisioningPlan plan = buildOptimalUpdateRequest(profile, (IPlanner) targetAgent.getService(IPlanner.SERVICE_NAME), context);
+			if (plan == null)
+				System.out.println(Messages.No_Update_Available);
+			executePlan(context, plan);
+		} finally {
+			// if we were originally were set to be roaming and we changed it, change it back before we return
+			if (wasRoaming && !Boolean.valueOf(profile.getProperty(IProfile.PROP_ROAMING)).booleanValue())
+				setRoaming(profile);
+		}
+	}
+
 	private void performProvisioningActions() throws CoreException {
 		IProfile profile = initializeProfile();
 		Collection<IInstallableUnit> installs = collectRoots(profile, rootsToInstall, true);
@@ -545,7 +637,7 @@ public class DirectorApplication implements IApplication {
 			ProvisioningContext context = new ProvisioningContext(targetAgent);
 			context.setMetadataRepositories(metadataRepositoryLocations.toArray(new URI[metadataRepositoryLocations.size()]));
 			context.setArtifactRepositories(artifactRepositoryLocations.toArray(new URI[artifactRepositoryLocations.size()]));
-			ProfileChangeRequest request = buildProvisioningRequest(profile, installs, uninstalls);
+			IProfileChangeRequest request = buildProvisioningRequest(profile, installs, uninstalls);
 			printRequest(request);
 			planAndExecute(profile, context, request);
 		} finally {
@@ -555,7 +647,7 @@ public class DirectorApplication implements IApplication {
 		}
 	}
 
-	private void planAndExecute(IProfile profile, ProvisioningContext context, ProfileChangeRequest request) throws CoreException {
+	private void planAndExecute(IProfile profile, ProvisioningContext context, IProfileChangeRequest request) throws CoreException {
 		IProvisioningPlan result = planner.getProvisioningPlan(request, context, new NullProgressMonitor());
 		IStatus operationStatus = result.getStatus();
 		if (!operationStatus.isOK())
@@ -587,7 +679,7 @@ public class DirectorApplication implements IApplication {
 		return false;
 	}
 
-	private void printRequest(ProfileChangeRequest request) {
+	private void printRequest(IProfileChangeRequest request) {
 		Collection<IInstallableUnit> toAdd = request.getAdditions();
 		for (IInstallableUnit added : toAdd) {
 			printMessage(NLS.bind(Messages.Installing, added.getId(), added.getVersion()));
@@ -714,6 +806,11 @@ public class DirectorApplication implements IApplication {
 				continue;
 			}
 
+			if (OPTION_UPDATE_IUS.isOption(opt)) {
+				updateRoots = true;
+				continue;
+			}
+
 			if (OPTION_P2_OS.isOption(opt)) {
 				os = getRequiredArgument(args, ++i);
 				continue;
@@ -736,7 +833,7 @@ public class DirectorApplication implements IApplication {
 			throw new ProvisionException(NLS.bind(Messages.unknown_option_0, opt));
 		}
 
-		if (!printHelpInfo && !printIUList && !purgeRegistry && rootsToInstall.isEmpty() && rootsToUninstall.isEmpty() && revertToPreviousState == -1) {
+		if (!printHelpInfo && !printIUList && !purgeRegistry && !updateRoots && rootsToInstall.isEmpty() && rootsToUninstall.isEmpty() && revertToPreviousState == -1) {
 			printMessage(Messages.Help_Missing_argument);
 			printHelpInfo = true;
 		}
@@ -787,6 +884,8 @@ public class DirectorApplication implements IApplication {
 					revertToPreviousState();
 				} else if (!(rootsToInstall.isEmpty() && rootsToUninstall.isEmpty()))
 					performProvisioningActions();
+				if (updateRoots)
+					performUpdateAction();
 				if (printIUList)
 					performList();
 				if (purgeRegistry)
@@ -918,7 +1017,7 @@ public class DirectorApplication implements IApplication {
 	}
 
 	private void performHelpInfo() {
-		CommandLineOption[] allOptions = new CommandLineOption[] {OPTION_HELP, OPTION_LIST, OPTION_INSTALL_IU, OPTION_UNINSTALL_IU, OPTION_REVERT, OPTION_DESTINATION, OPTION_METADATAREPOS, OPTION_ARTIFACTREPOS, OPTION_REPOSITORIES, OPTION_VERIFY_ONLY, OPTION_PROFILE, OPTION_FLAVOR, OPTION_SHARED, OPTION_BUNDLEPOOL, OPTION_PROFILE_PROPS, OPTION_ROAMING, OPTION_P2_OS, OPTION_P2_WS, OPTION_P2_ARCH, OPTION_P2_NL, OPTION_PURGEHISTORY};
+		CommandLineOption[] allOptions = new CommandLineOption[] {OPTION_HELP, OPTION_LIST, OPTION_INSTALL_IU, OPTION_UNINSTALL_IU, OPTION_REVERT, OPTION_DESTINATION, OPTION_METADATAREPOS, OPTION_ARTIFACTREPOS, OPTION_REPOSITORIES, OPTION_VERIFY_ONLY, OPTION_PROFILE, OPTION_FLAVOR, OPTION_SHARED, OPTION_BUNDLEPOOL, OPTION_PROFILE_PROPS, OPTION_ROAMING, OPTION_P2_OS, OPTION_P2_WS, OPTION_P2_ARCH, OPTION_P2_NL, OPTION_PURGEHISTORY, OPTION_UPDATE_IUS};
 		for (int i = 0; i < allOptions.length; ++i) {
 			allOptions[i].appendHelp(System.out);
 		}

@@ -262,7 +262,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 	 * assume default values, and the default self capability is also added to the IU.
 	 */
 	public static IInstallableUnit createEclipseIU(String name, Version version, IRequirement[] requires, ITouchpointData touchpointData) {
-		return createIU(name, version, null, requires, BUNDLE_CAPABILITY, NO_PROPERTIES, TOUCHPOINT_OSGI, touchpointData, false);
+		return createIU(name, version, null, requires, BUNDLE_CAPABILITY, NO_PROPERTIES, TOUCHPOINT_OSGI, touchpointData, true);
 	}
 
 	public static IEngine createEngine() {
@@ -442,6 +442,7 @@ public abstract class AbstractProvisioningTest extends TestCase {
 		if (metaRequirements == null)
 			metaRequirements = NO_REQUIRES;
 		iu.setMetaRequirements(metaRequirements);
+		iu.setUpdateDescriptor(MetadataFactory.createUpdateDescriptor(name, new VersionRange(Version.emptyVersion, true, version, false), 0, null));
 		return MetadataFactory.createInstallableUnit(iu);
 	}
 
