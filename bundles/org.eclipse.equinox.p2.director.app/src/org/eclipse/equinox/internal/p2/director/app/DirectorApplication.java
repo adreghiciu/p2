@@ -615,9 +615,11 @@ public class DirectorApplication implements IApplication {
 			context.setMetadataRepositories(metadataRepositoryLocations.toArray(new URI[metadataRepositoryLocations.size()]));
 			context.setArtifactRepositories(artifactRepositoryLocations.toArray(new URI[artifactRepositoryLocations.size()]));
 			IProvisioningPlan plan = buildOptimalUpdateRequest(profile, (IPlanner) targetAgent.getService(IPlanner.SERVICE_NAME), context);
-			if (plan == null)
-				System.out.println(Messages.No_Update_Available);
-			executePlan(context, plan);
+			if (plan != null) {
+				executePlan(context, plan);
+			} else {
+				printMessage(Messages.No_Update_Available);
+			}
 		} finally {
 			// if we were originally were set to be roaming and we changed it, change it back before we return
 			if (wasRoaming && !Boolean.valueOf(profile.getProperty(IProfile.PROP_ROAMING)).booleanValue())
