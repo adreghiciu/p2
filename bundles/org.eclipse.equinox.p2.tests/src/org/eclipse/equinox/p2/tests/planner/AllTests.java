@@ -46,6 +46,12 @@ public class AllTests extends TestCase {
 		suite.addTestSuite(Bug271954.class);
 		//		suite.addTestSuite(Bug272251.class);
 		suite.addTestSuite(Bug278668.class);
+		suite.addTestSuite(Bug300572.class);
+		suite.addTestSuite(Bug300572Small2.class);
+		suite.addTestSuite(Bug300572Small3.class);
+		suite.addTestSuite(Bug300572Small4.class);
+		suite.addTestSuite(Bug300572Small5.class);
+		suite.addTestSuite(Bug300572Small6.class);
 		suite.addTestSuite(Bug302582.class);
 		suite.addTestSuite(Bug302582b.class);
 		suite.addTestSuite(Bug302582c.class);
@@ -122,7 +128,7 @@ public class AllTests extends TestCase {
 		suite.addTestSuite(PatchTestUpdate5.class);
 		suite.addTestSuite(PermissiveSlicerTest.class);
 		suite.addTestSuite(PP2ShouldFailToInstall.class);
-		suite.addTestSuite(ProvisioningPlanQueryTest.class);
+		//		suite.addTestSuite(ProvisioningPlanQueryTest.class); disabled, see bug 313812 
 		suite.addTestSuite(SDKPatchingTest1.class);
 		suite.addTestSuite(SDKPatchingTest2.class);
 		suite.addTestSuite(SeveralOptionalDependencies.class);
