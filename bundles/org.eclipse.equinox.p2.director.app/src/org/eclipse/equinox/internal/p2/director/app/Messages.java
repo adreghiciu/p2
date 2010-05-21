@@ -52,6 +52,7 @@ public class Messages extends NLS {
 	public static String Help_Revert_to_previous_state;
 	public static String Help_Use_a_shared_location_for_the_install;
 	public static String Help_Purge_the_install_registry;
+	public static String Help_Update_Roots;
 
 	public static String Ignored_repo;
 	public static String Installing;
@@ -69,6 +70,7 @@ public class Messages extends NLS {
 	public static String unable_to_parse_0_to_uri_1;
 	public static String Uninstalling;
 	public static String unknown_option_0;
+	public static String No_Update_Available;
 
 	public static String problem_CallingDirector;
 	public static String problem_repoMustBeURI;
