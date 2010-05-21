@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2006, 2009 Cloudsmith Inc.
+ * Copyright (c) 2006, 2010 Cloudsmith Inc.
  *  All rights reserved. This program and the accompanying materials
  *  are made available under the terms of the Eclipse Public License v1.0
  *  which accompanies this distribution, and is available at
@@ -8,6 +8,7 @@
  *  Contributors:
  * 	Cloudsmith Inc - initial API and implementation
  * 	IBM Corporation - ongoing development
+ *  Sonatype Inc - ongoing development
  ******************************************************************************/
 package org.eclipse.equinox.internal.p2.repository;
 
@@ -257,6 +258,11 @@ public final class FileReader extends FileTransferJob implements IFileTransferLi
 				if (t instanceof IOException)
 					e = (IOException) t;
 				else {
+					if (t instanceof UserCancelledException) {
+						Throwable cause = t;
+						t = new OperationCanceledException(t.getMessage());
+						t.initCause(cause);
+					}
 					e = new IOException(t.getMessage());
 					e.initCause(t);
 				}

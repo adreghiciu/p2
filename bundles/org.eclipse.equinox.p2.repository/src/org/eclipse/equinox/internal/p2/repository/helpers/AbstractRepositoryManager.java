@@ -11,8 +11,7 @@
  *******************************************************************************/
 package org.eclipse.equinox.internal.p2.repository.helpers;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.*;
 import java.lang.ref.SoftReference;
 import java.net.*;
 import java.util.*;
@@ -638,17 +637,9 @@ public abstract class AbstractRepositoryManager<T> implements IRepositoryManager
 			//add the repository first so that it will be enabled, but don't send add event until after the load
 			added = addRepository(location, true, false);
 
-			// get the search order from the server, if it's available
-			ByteArrayOutputStream index = new ByteArrayOutputStream();
-			LocationProperties locationProperties = null;
-			try {
-				getTransport().download(getIndexFile(location), index, monitor);
-			} catch (Throwable e) {
-				// If any exceptions are thrown, just ignore the index file
-			}
+			LocationProperties indexFile = loadIndexFile(location, monitor);
 
-			locationProperties = LocationProperties.create(new ByteArrayInputStream(index.toByteArray()));
-			String[] preferredOrder = getPreferredRepositorySearchOrder(locationProperties);
+			String[] preferredOrder = getPreferredRepositorySearchOrder(indexFile);
 			String[] suffixes = sortSuffixes(getAllSuffixes(), location, preferredOrder);
 
 			SubMonitor sub = SubMonitor.convert(monitor, NLS.bind(Messages.repoMan_adding, location), suffixes.length * 100);
@@ -691,6 +682,49 @@ public abstract class AbstractRepositoryManager<T> implements IRepositoryManager
 		if (added)
 			broadcastChangeEvent(location, getRepositoryType(), RepositoryEvent.ADDED, true);
 		return result;
+	}
+
+	/**
+	 * Fetches the p2.index file from the server. If the file could not be fetched
+	 * a NullSafe version is returned.
+	 */
+	private LocationProperties loadIndexFile(URI location, IProgressMonitor monitor) {
+		LocationProperties locationProperties = LocationProperties.createEmptyIndexFile();
+		//Handle the case of local repos
+		if ("file".equals(location.getScheme())) { //$NON-NLS-1$ 
+			InputStream localStream = null;
+			try {
+				try {
+					File indexFile = URIUtil.toFile(getIndexFileURI(location));
+					if (indexFile != null && indexFile.exists() && indexFile.canRead()) {
+						localStream = new FileInputStream(indexFile);
+						locationProperties = LocationProperties.create(localStream);
+					}
+				} catch (URISyntaxException e) {
+					LogHelper.log(new Status(IStatus.ERROR, Activator.ID, e.getMessage(), e));
+				} finally {
+					if (localStream != null)
+						localStream.close();
+				}
+			} catch (IOException e) {
+				//do nothing.
+			}
+			return locationProperties;
+		}
+
+		//Handle non local repos (i.e. not file:)
+		ByteArrayOutputStream index = new ByteArrayOutputStream();
+		IStatus indexFileStatus = null;
+		try {
+			indexFileStatus = getTransport().download(getIndexFileURI(location), index, monitor);
+		} catch (URISyntaxException uriSyntaxException) {
+			LogHelper.log(new Status(IStatus.ERROR, Activator.ID, uriSyntaxException.getMessage(), uriSyntaxException));
+			indexFileStatus = null;
+		}
+		if (indexFileStatus != null && indexFileStatus.isOK())
+			locationProperties = LocationProperties.create(new ByteArrayInputStream(index.toByteArray()));
+
+		return locationProperties;
 	}
 
 	/**
@@ -1121,7 +1155,7 @@ public abstract class AbstractRepositoryManager<T> implements IRepositoryManager
 		}
 	}
 
-	private static URI getIndexFile(URI base) throws URISyntaxException {
+	private static URI getIndexFileURI(URI base) throws URISyntaxException {
 		final String name = INDEX_FILE;
 		String spec = base.toString();
 		if (spec.endsWith(name))
