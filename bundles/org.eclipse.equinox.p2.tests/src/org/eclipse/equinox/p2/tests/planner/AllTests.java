@@ -47,6 +47,7 @@ public class AllTests extends TestCase {
 		//		suite.addTestSuite(Bug272251.class);
 		suite.addTestSuite(Bug278668.class);
 		suite.addTestSuite(Bug300572.class);
+		suite.addTestSuite(Bug300572Small.class);
 		suite.addTestSuite(Bug300572Small2.class);
 		suite.addTestSuite(Bug300572Small3.class);
 		suite.addTestSuite(Bug300572Small4.class);
