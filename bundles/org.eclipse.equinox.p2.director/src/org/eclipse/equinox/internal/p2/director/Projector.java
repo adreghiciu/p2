@@ -531,6 +531,7 @@ public class Projector {
 		} else {
 			//Patches are applicable to the IU
 			expandRequirementsWithPatches(iu, applicablePatches, isRootIU);
+			patchTouchpointType(iu, applicablePatches, isRootIU);
 		}
 	}
 
@@ -868,6 +869,10 @@ public class Projector {
 		if (req == null)
 			return;
 		expandRequirement(req, iu, CollectionUtils.<AbstractVariable> emptyList(), isRootIu);
+	}
+
+	private void patchTouchpoint(IInstallableUnit iu, IQueryResult<IInstallableUnit> applicablePatches, boolean isRootIu) throws ContradictionException {
+
 	}
 
 	private void missingRequirement(IInstallableUnit iu, IRequirement req) throws ContradictionException {
